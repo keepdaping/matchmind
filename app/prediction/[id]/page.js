@@ -8,24 +8,32 @@ export default function PredictionPage({ params }) {
   const router = useRouter()
   const [prediction, setPrediction] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/login'); return }
+      try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser()
+        if (authError) throw authError
+        if (!user) { router.push('/login'); return }
 
-      const { data, error } = await supabase
-        .from('predictions')
-        .select('*')
-        .eq('id', params.id)
-        .single()
+        const { data, error: queryError } = await supabase
+          .from('predictions')
+          .select('*')
+          .eq('id', params.id)
+          .single()
 
-      if (error || !data) {
-        router.push('/dashboard')
-        return
+        if (queryError || !data) {
+          router.push('/dashboard')
+          return
+        }
+        setPrediction(data)
+      } catch (err) {
+        console.error('Prediction page load error:', err)
+        setError('Unable to load prediction. Please try again.')
+      } finally {
+        setLoading(false)
       }
-      setPrediction(data)
-      setLoading(false)
     }
     load()
   }, [params.id])
@@ -34,6 +42,20 @@ export default function PredictionPage({ params }) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-brand-500 animate-pulse">Loading prediction...</div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="max-w-md text-center">
+          <div className="text-red-400 font-semibold mb-2">{error}</div>
+          <button onClick={() => router.push('/dashboard')}
+            className="mt-3 bg-brand-500 hover:bg-brand-700 text-white py-2 px-4 rounded-lg">
+            Back to dashboard
+          </button>
+        </div>
       </div>
     )
   }

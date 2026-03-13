@@ -19,7 +19,7 @@ export async function POST(req) {
     const { data: { user }, error } = await db.auth.getUser(token)
 
     if (error || !user) {
-      console.warn('Billing checkout auth failed', { error?.message, token: token ? '[REDACTED]' : null })
+      console.warn('Billing checkout auth failed', { errorMessage: error?.message, token: token ? '[REDACTED]' : null })
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 

@@ -27,6 +27,13 @@ function PredictionCard({ fixture, userId, userPlan, onUnlock }) {
   async function unlock() {
     setLoading(true)
     setError(null)
+
+    if (!userId) {
+      setError('You must be signed in to unlock predictions.')
+      setLoading(false)
+      return
+    }
+
     try {
       const res = await fetch('/api/predict', {
         method: 'POST',
@@ -42,19 +49,27 @@ function PredictionCard({ fixture, userId, userPlan, onUnlock }) {
           userId,
         })
       })
-      const data = await res.json()
+
+      const data = await res.json().catch(() => ({}))
+
       if (!res.ok) {
-        if (data.code === 'NO_TOKENS') {
+        if (data?.code === 'NO_TOKENS') {
           setError('no_tokens')
         } else {
-          setError(data.error || 'Failed to generate prediction')
+          setError(data?.error || 'Failed to generate prediction')
         }
         return
       }
+
+      if (!data || !data.prediction) {
+        throw new Error('Unexpected API response')
+      }
+
       setPrediction(data.prediction)
       setUnlocked(true)
       onUnlock?.()
     } catch (e) {
+      console.error('Prediction unlock error:', e)
       setError('Something went wrong. Try again.')
     } finally {
       setLoading(false)
@@ -182,46 +197,56 @@ export default function Dashboard() {
   const [league, setLeague] = useState('All')
   const [loadingFixtures, setLoadingFixtures] = useState(true)
   const [streak, setStreak] = useState(0)
+  const [pageError, setPageError] = useState(null)
 
   useEffect(() => {
     async function init() {
-      const { data: { user: authUser } } = await supabase.auth.getUser()
-      if (!authUser) { router.push('/login'); return }
-      setUser(authUser)
+      try {
+        const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
+        if (authError) throw authError
+        if (!authUser) { router.push('/login'); return }
+        setUser(authUser)
 
-      // Fetch user profile
-      const { data: prof } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', authUser.id)
-        .single()
-      setProfile(prof)
+        // Fetch user profile
+        const { data: prof, error: profError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', authUser.id)
+          .single()
+        if (profError) throw profError
+        setProfile(prof)
 
-      // Update streak
-      if (prof) {
-        const lastVisit = prof.last_visit_date
-        const today = new Date().toISOString().split('T')[0]
-        const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
+        // Update streak
+        if (prof) {
+          const lastVisit = prof.last_visit_date
+          const today = new Date().toISOString().split('T')[0]
+          const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
 
-        if (lastVisit !== today) {
-          const newStreak = lastVisit === yesterday ? (prof.streak || 0) + 1 : 1
-          setStreak(newStreak)
-          await supabase.from('users').update({
-            last_visit_date: today,
-            streak: newStreak,
-          }).eq('id', authUser.id)
-        } else {
-          setStreak(prof.streak || 1)
+          if (lastVisit !== today) {
+            const newStreak = lastVisit === yesterday ? (prof.streak || 0) + 1 : 1
+            setStreak(newStreak)
+            await supabase.from('users').update({
+              last_visit_date: today,
+              streak: newStreak,
+            }).eq('id', authUser.id)
+          } else {
+            setStreak(prof.streak || 1)
+          }
         }
-      }
 
-      // Fetch fixtures
-      setLoadingFixtures(true)
-      const res = await fetch(`/api/matches?league=${league}`)
-      const data = await res.json()
-      setFixtures(data.fixtures || [])
-      setLoadingFixtures(false)
+        // Fetch fixtures
+        setLoadingFixtures(true)
+        const res = await fetch(`/api/matches?league=${league}`)
+        const data = await res.json().catch(() => ({}))
+        setFixtures(data.fixtures || [])
+      } catch (err) {
+        console.error('Dashboard init error:', err)
+        setPageError('Unable to load predictions. Please refresh or try again later.')
+      } finally {
+        setLoadingFixtures(false)
+      }
     }
+
     init()
   }, [])
 
@@ -290,6 +315,13 @@ export default function Dashboard() {
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} · {fixtures.length} matches found
           </p>
         </div>
+
+        {/* Page-level error */}
+        {pageError && (
+          <div className="bg-red-900/40 border border-red-500/30 rounded-2xl p-4 mb-6 text-sm text-red-200">
+            {pageError}
+          </div>
+        )}
 
         {/* Upgrade banner for free users */}
         {profile?.plan === 'free' && (
