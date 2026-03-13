@@ -58,9 +58,16 @@ function BillingContent() {
   async function handleUpgrade(planId) {
     setLoading(true)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
+      let { data: { session } } = await supabase.auth.getSession()
+
+      // If the session is expired, attempt to refresh it so we have a valid access token.
+      if (!session?.access_token) {
+        const { data: { session: refreshed } } = await supabase.auth.refreshSession()
+        session = refreshed
+      }
+
       const accessToken = session?.access_token
-      if (!accessToken) throw new Error('Not signed in')
+      if (!accessToken) throw new Error('Could not get access token. Please sign in again.')
 
       const res = await fetch('/api/billing/checkout', {
         method: 'POST',
@@ -70,10 +77,15 @@ function BillingContent() {
         },
         body: JSON.stringify({ type: 'subscription', plan: planId })
       })
-      const { url } = await res.json()
-      if (url) window.location.href = url
+
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data?.error || 'Checkout failed')
+      }
+
+      if (data.url) window.location.href = data.url
     } catch (e) {
-      alert('Something went wrong. Try again.')
+      alert(e.message || 'Something went wrong. Try again.')
     } finally {
       setLoading(false)
     }
@@ -82,9 +94,16 @@ function BillingContent() {
   async function handleTokenPack(packId) {
     setLoading(true)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
+      let { data: { session } } = await supabase.auth.getSession()
+
+      // If the session is expired, attempt to refresh it so we have a valid access token.
+      if (!session?.access_token) {
+        const { data: { session: refreshed } } = await supabase.auth.refreshSession()
+        session = refreshed
+      }
+
       const accessToken = session?.access_token
-      if (!accessToken) throw new Error('Not signed in')
+      if (!accessToken) throw new Error('Could not get access token. Please sign in again.')
 
       const res = await fetch('/api/billing/checkout', {
         method: 'POST',
@@ -94,10 +113,15 @@ function BillingContent() {
         },
         body: JSON.stringify({ type: 'tokens', packId })
       })
-      const { url } = await res.json()
-      if (url) window.location.href = url
+
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data?.error || 'Checkout failed')
+      }
+
+      if (data.url) window.location.href = data.url
     } catch (e) {
-      alert('Something went wrong. Try again.')
+      alert(e.message || 'Something went wrong. Try again.')
     } finally {
       setLoading(false)
     }

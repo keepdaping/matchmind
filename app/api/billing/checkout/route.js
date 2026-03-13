@@ -7,22 +7,19 @@ export async function POST(req) {
   try {
     const { type, plan, packId } = await req.json()
 
-    // Get current user from Supabase auth header
+    // Extract access token from auth header (Bearer token)
     const authHeader = req.headers.get('authorization') || ''
-    const token = authHeader.replace('Bearer ', '')
+    const token = authHeader.split(' ')[1] || ''
 
-    // Use service client to verify
+    if (!token) {
+      return NextResponse.json({ error: 'Missing auth token' }, { status: 401 })
+    }
+
     const db = getServiceClient()
+    const { data: { user }, error } = await db.auth.getUser(token)
 
-    // We rely on the client sending userId via cookie session
-    // For production, use Supabase middleware to extract user from cookie
-    // For now, we read it from the request body as a fallback
-    const body2 = await req.text().catch(() => '{}')
-
-    // Re-parse since we already parsed above — use a workaround
-    const { data: { user } } = await db.auth.getUser(token)
-
-    if (!user) {
+    if (error || !user) {
+      console.warn('Billing checkout auth failed', { error?.message, token: token ? '[REDACTED]' : null })
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
