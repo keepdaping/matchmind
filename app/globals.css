@@ -1,0 +1,76 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand: #1D9E75;
+  --brand-light: #E1F5EE;
+  --brand-dark: #0F6E56;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: #0a0f0d;
+  color: #e8f0ec;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: #0a0f0d; }
+::-webkit-scrollbar-thumb { background: #1D9E75; border-radius: 2px; }
+
+/* Glass card */
+.glass {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  backdrop-filter: blur(8px);
+}
+
+/* Glow effect */
+.glow {
+  box-shadow: 0 0 30px rgba(29,158,117,0.15);
+}
+
+/* Prediction card shimmer */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, #111 25%, #1a2a20 50%, #111 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Confidence bar animation */
+@keyframes fillBar {
+  from { width: 0%; }
+  to { width: var(--target-width); }
+}
+
+.confidence-bar {
+  animation: fillBar 1s ease-out forwards;
+}
+
+/* Blur paywall */
+.paywall-blur {
+  filter: blur(6px);
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Pulse animation for live badge */
+@keyframes pulse-green {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.pulse-green {
+  animation: pulse-green 1.5s ease-in-out infinite;
+}
