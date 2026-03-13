@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -29,6 +29,14 @@ const TOKEN_PACKS = [
 ]
 
 export default function BillingPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <BillingContent />
+    </Suspense>
+  )
+}
+
+function BillingContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [profile, setProfile] = useState(null)

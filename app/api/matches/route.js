@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { getTodayFixtures } from '@/lib/football'
 import { getServiceClient } from '@/lib/supabase'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url)
