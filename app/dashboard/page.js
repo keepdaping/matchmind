@@ -13,8 +13,8 @@ function PredictionCard({ fixture, userId, userPlan, onUnlock }) {
   const [unlocked, setUnlocked] = useState(false)
 
   const isFreeUser = userPlan === 'free'
-  const isLocked = isFreeUser && !unlocked
-
+  /*const isLocked = isFreeUser && !unlocked*/
+  const isLocked = false
   const confColor = prediction?.confidence >= 80 ? '#1D9E75' :
     prediction?.confidence >= 65 ? '#EF9F27' : '#E24B4A'
 
