@@ -58,9 +58,16 @@ function BillingContent() {
   async function handleUpgrade(planId) {
     setLoading(true)
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+      if (!accessToken) throw new Error('Not signed in')
+
       const res = await fetch('/api/billing/checkout', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`
+        },
         body: JSON.stringify({ type: 'subscription', plan: planId })
       })
       const { url } = await res.json()
@@ -75,9 +82,16 @@ function BillingContent() {
   async function handleTokenPack(packId) {
     setLoading(true)
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+      if (!accessToken) throw new Error('Not signed in')
+
       const res = await fetch('/api/billing/checkout', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`
+        },
         body: JSON.stringify({ type: 'tokens', packId })
       })
       const { url } = await res.json()
