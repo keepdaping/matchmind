@@ -64,7 +64,10 @@ export async function POST(req) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    if (profile.token_balance <= 0) {
+    const isElite = profile.plan === 'elite'
+
+    // Elite users have unlimited predictions and should never consume tokens.
+    if (!isElite && profile.token_balance <= 0) {
       return NextResponse.json({
         error: 'No predictions remaining',
         code: 'NO_TOKENS',
@@ -111,34 +114,36 @@ export async function POST(req) {
 
     // Deduct 1 token (atomic) — this prevents token race conditions.
     // If deduction fails, we do not want to create a prediction for free.
-    const { data: newBalance, error: deductError } = await db.rpc('decrement_user_tokens', {
-      _user: user.id,
-      _amount: 1,
-    })
-
-    if (deductError) {
-      const isInsufficient = String(deductError?.message || '').toLowerCase().includes('insufficient')
-      console.error('[Predict] Token deduction failed', {
-        userId: user.id,
-        matchId,
-        error: deductError,
-        isInsufficient,
+    if (!isElite) {
+      const { error: deductError } = await db.rpc('decrement_user_tokens', {
+        _user: user.id,
+        _amount: 1,
       })
 
-      return NextResponse.json(
-        {
-          error: isInsufficient ? 'No predictions remaining' : 'Unable to deduct token. Please try again.',
-          code: isInsufficient ? 'NO_TOKENS' : 'TOKEN_DEDUCTION_FAILED',
-          details: deductError?.message,
-          deductError: {
-            message: deductError?.message,
-            code: deductError?.code,
-            details: deductError?.details,
-            hint: deductError?.hint,
+      if (deductError) {
+        const isInsufficient = String(deductError?.message || '').toLowerCase().includes('insufficient')
+        console.error('[Predict] Token deduction failed', {
+          userId: user.id,
+          matchId,
+          error: deductError,
+          isInsufficient,
+        })
+
+        return NextResponse.json(
+          {
+            error: isInsufficient ? 'No predictions remaining' : 'Unable to deduct token. Please try again.',
+            code: isInsufficient ? 'NO_TOKENS' : 'TOKEN_DEDUCTION_FAILED',
+            details: deductError?.message,
+            deductError: {
+              message: deductError?.message,
+              code: deductError?.code,
+              details: deductError?.details,
+              hint: deductError?.hint,
+            },
           },
-        },
-        { status: isInsufficient ? 402 : 500 }
-      )
+          { status: isInsufficient ? 402 : 500 }
+        )
+      }
     }
 
     // Save prediction to database
@@ -157,18 +162,20 @@ export async function POST(req) {
         dbError: saveError,
       })
 
-      // Attempt to refund the token.
-      try {
-        await db.rpc('decrement_user_tokens', {
-          _user: user.id,
-          _amount: -1,
-        })
-      } catch (refundError) {
-        console.error('[Predict] Failed to refund token after insert failure', {
-          userId: user.id,
-          matchId,
-          refundError,
-        })
+      if (!isElite) {
+        // Attempt to refund the token.
+        try {
+          await db.rpc('decrement_user_tokens', {
+            _user: user.id,
+            _amount: -1,
+          })
+        } catch (refundError) {
+          console.error('[Predict] Failed to refund token after insert failure', {
+            userId: user.id,
+            matchId,
+            refundError,
+          })
+        }
       }
 
       // Handle race condition where another request inserted the same prediction.
@@ -231,13 +238,15 @@ export async function POST(req) {
       )
     }
 
-    // Log token transaction
-    await db.from('token_transactions').insert({
-      user_id: user.id,
-      amount: -1,
-      type: 'prediction_unlock',
-      reference: `match_${matchId}`
-    })
+    if (!isElite) {
+      // Log token transaction
+      await db.from('token_transactions').insert({
+        user_id: user.id,
+        amount: -1,
+        type: 'prediction_unlock',
+        reference: `match_${matchId}`
+      })
+    }
 
     return NextResponse.json({ prediction: saved, cached: false })
 
