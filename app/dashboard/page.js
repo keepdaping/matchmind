@@ -278,6 +278,44 @@ export default function Dashboard() {
     ? '∞'
     : profile?.token_balance ?? 0
 
+  const hasAccumulatorAccess = ['pro', 'elite'].includes(String(profile?.plan || '').toLowerCase())
+  const [accumulatorLoading, setAccumulatorLoading] = useState(false)
+
+  async function handleAccumulatorClick() {
+    if (!user) {
+      router.push('/login')
+      return
+    }
+
+    setAccumulatorLoading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      if (!token) throw new Error('Session expired, please sign in again.')
+
+      const res = await fetch('/api/accumulator', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to generate accumulator')
+      }
+
+      // Navigate to the accumulator page where the user can view/download it
+      router.push('/accumulator')
+    } catch (err) {
+      console.error('[Accumulator] API error', err)
+      // In a real UI we would show a toast; for now just log.
+    } finally {
+      setAccumulatorLoading(false)
+    }
+  }
+
   return (
     <div className="min-h-screen">
       {/* Top nav */}
@@ -355,6 +393,18 @@ export default function Dashboard() {
             </button>
           ))}
         </div>
+
+        {/* Accumulator access (Pro+Elite) */}
+        {hasAccumulatorAccess && (
+          <div className="mb-6">
+            <button onClick={handleAccumulatorClick}
+              disabled={accumulatorLoading}
+              className="bg-brand-500 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-semibold px-5 py-3 rounded-xl transition-colors">
+              {accumulatorLoading ? 'Generating accumulator…' : 'Best AI Accumulator Prediction'}
+            </button>
+            <p className="text-xs text-gray-400 mt-2">Elite + Pro members can build a daily accumulator using AI.</p>
+          </div>
+        )}
 
         {/* Fixture grid */}
         {loadingFixtures ? (
