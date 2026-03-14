@@ -118,34 +118,63 @@ export async function POST(req) {
 
     if (saveError) {
       // Handle race condition where another request inserted the same prediction
-      const isUniqueViolation = saveError?.code === '23505' || String(saveError?.message || '').includes('duplicate key value')
+      const isUniqueViolation =
+        saveError?.code === '23505' ||
+        String(saveError?.message || '').toLowerCase().includes('duplicate key')
+
       if (isUniqueViolation) {
-        const { data: existingAfterRace } = await db
+        const { data: existingAfterRace, error: existingError } = await db
           .from('predictions')
           .select('*')
           .eq('user_id', user.id)
           .eq('match_id', String(matchId))
           .single()
+
+        if (existingError) {
+          console.error('[Predict] Failed to fetch prediction after unique violation', {
+            error: existingError,
+            userId: user.id,
+            matchId,
+          })
+        }
+
         if (existingAfterRace) {
           return NextResponse.json({ prediction: existingAfterRace, cached: true })
         }
       }
 
-      console.error('Prediction insert error:', {
-        error: saveError,
-        payload: cleaned,
+      // Log full error payload for debugging
+      console.error('[Predict] Prediction insert failed', {
+        userId: user.id,
+        matchId,
+        cleaned,
+        dbError: saveError,
       })
-      return NextResponse.json({ error: 'Failed to save prediction' }, { status: 500 })
+
+      const safeMessage = saveError?.message || 'Failed to save prediction'
+      return NextResponse.json(
+        {
+          error: safeMessage,
+          code: saveError?.code || 'PREDICT_SAVE_FAILED',
+          details: saveError?.details,
+          hint: saveError?.hint,
+        },
+        { status: 500 }
+      )
     }
 
-    // Deduct 1 token (atomic)
+    // Deduct 1 token (atomic) — this prevents token race conditions
     const { data: newBalance, error: deductError } = await db.rpc('decrement_user_tokens', {
       _user: user.id,
       _amount: 1,
     })
 
     if (deductError) {
-      console.warn('Token deduction failed', { error: deductError })
+      console.error('[Predict] Token deduction failed', {
+        userId: user.id,
+        matchId,
+        error: deductError,
+      })
       return NextResponse.json({
         error: 'Unable to deduct token. Please try again.',
         code: 'TOKEN_DEDUCTION_FAILED'
