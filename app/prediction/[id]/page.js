@@ -36,7 +36,7 @@ export default function PredictionPage({ params }) {
       }
     }
     load()
-  }, [params.id])
+  }, [params.id, router])
 
   if (loading) {
     return (

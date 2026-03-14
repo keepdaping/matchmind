@@ -1,25 +1,24 @@
 import { NextResponse } from 'next/server'
 import { createSubscriptionCheckout, createTokenPackCheckout, PLANS, TOKEN_PACKS } from '@/lib/stripe'
 import { getServiceClient } from '@/lib/supabase'
-import { supabase } from '@/lib/supabase'
+
+async function getUserFromRequest(req) {
+  const authHeader = req.headers.get('authorization') || ''
+  const token = authHeader.split(' ')[1] || ''
+  if (!token) return null
+
+  const db = getServiceClient()
+  const { data, error } = await db.auth.getUser(token)
+  if (error || !data?.user) return null
+  return data.user
+}
 
 export async function POST(req) {
   try {
     const { type, plan, packId } = await req.json()
 
-    // Extract access token from auth header (Bearer token)
-    const authHeader = req.headers.get('authorization') || ''
-    const token = authHeader.split(' ')[1] || ''
-
-    if (!token) {
-      return NextResponse.json({ error: 'Missing auth token' }, { status: 401 })
-    }
-
-    const db = getServiceClient()
-    const { data: { user }, error } = await db.auth.getUser(token)
-
-    if (error || !user) {
-      console.warn('Billing checkout auth failed', { errorMessage: error?.message, token: token ? '[REDACTED]' : null })
+    const user = await getUserFromRequest(req)
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 

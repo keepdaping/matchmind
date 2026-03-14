@@ -53,7 +53,7 @@ function BillingContent() {
       setProfile({ ...data, email: user.email })
     }
     load()
-  }, [])
+  }, [router])
 
   async function handleUpgrade(planId) {
     setLoading(true)

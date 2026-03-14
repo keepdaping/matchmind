@@ -88,7 +88,8 @@ create table public.predictions (
 
   id uuid primary key default gen_random_uuid(),
 
-  match_id text unique,    -- TEXT avoids bigint errors
+  user_id uuid references public.users(id) on delete cascade,
+  match_id text not null,    -- TEXT avoids bigint errors
 
   home_team text not null,
   away_team text not null,
@@ -120,6 +121,9 @@ create table public.predictions (
   created_at timestamptz default now()
 
 );
+
+-- Ensure each user can only cache one prediction per match
+create unique index idx_predictions_user_match on predictions(user_id, match_id);
 
 
 
@@ -222,18 +226,26 @@ using (auth.uid() = id);
 
 -- PREDICTIONS POLICIES --------------------------------------
 
-create policy "predictions_read"
+create policy "predictions_select_own"
 on predictions
 for select
 to authenticated
-using (true);
+using (auth.uid() = user_id);
 
 
-create policy "predictions_insert"
+create policy "predictions_insert_own"
 on predictions
 for insert
 to authenticated
-with check (true);
+with check (auth.uid() = user_id);
+
+
+create policy "predictions_update_own"
+on predictions
+for update
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
 
 
 

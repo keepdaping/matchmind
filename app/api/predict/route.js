@@ -27,28 +27,44 @@ function normalizeDate(value) {
   return d.toISOString()
 }
 
+async function getUserFromRequest(req) {
+  const authHeader = req.headers.get('authorization') || ''
+  const token = authHeader.split(' ')[1] || ''
+  if (!token) return null
+
+  const db = getServiceClient()
+  const { data, error } = await db.auth.getUser(token)
+  if (error || !data?.user) return null
+  return data.user
+}
+
 export async function POST(req) {
   try {
-    const { matchId, matchData, userId } = await req.json()
+    const user = await getUserFromRequest(req)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
 
-    if (!userId || !matchData) {
+    const { matchId, matchData } = await req.json()
+
+    if (!matchId || !matchData) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
     const db = getServiceClient()
 
     // Check user token balance
-    const { data: user, error: userError } = await db
+    const { data: profile, error: profileError } = await db
       .from('users')
       .select('token_balance, plan')
-      .eq('id', userId)
+      .eq('id', user.id)
       .single()
 
-    if (userError || !user) {
+    if (profileError || !profile) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    if (user.token_balance <= 0) {
+    if (profile.token_balance <= 0) {
       return NextResponse.json({
         error: 'No predictions remaining',
         code: 'NO_TOKENS',
@@ -56,10 +72,11 @@ export async function POST(req) {
       }, { status: 402 })
     }
 
-    // Check if prediction already exists for this match
+    // Check if prediction already exists for this match for this user
     const { data: existing } = await db
       .from('predictions')
       .select('*')
+      .eq('user_id', user.id)
       .eq('match_id', String(matchId))
       .single()
 
@@ -69,10 +86,11 @@ export async function POST(req) {
     }
 
     // Generate prediction via Claude
-    const prediction = await generatePrediction(matchData, user.plan)
+    const prediction = await generatePrediction(matchData, profile.plan)
 
     // Sanitize and validate values before inserting
     const cleaned = {
+      user_id: user.id,
       match_id: String(matchId),
       home_team: String(matchData.home_team || ''),
       away_team: String(matchData.away_team || ''),
@@ -108,12 +126,12 @@ export async function POST(req) {
 
     // Deduct 1 token
     await db.from('users').update({
-      token_balance: user.token_balance - 1
-    }).eq('id', userId)
+      token_balance: profile.token_balance - 1
+    }).eq('id', user.id)
 
     // Log token transaction
     await db.from('token_transactions').insert({
-      user_id: userId,
+      user_id: user.id,
       amount: -1,
       type: 'prediction_unlock',
       reference: `match_${matchId}`

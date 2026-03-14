@@ -21,9 +21,14 @@ export async function GET(req) {
 
     if (!cacheError && cached && cached.length > 0) {
       console.log(`[Matches] Returning ${cached.length} cached fixtures`)
+      const enriched = cached.map(f => ({
+        ...f,
+        // For cached records we keep the full fixture time in `date` to match the live API response.
+        date: f.match_time || f.date,
+      }))
       const filtered = league !== 'All'
-        ? cached.filter(f => f.league === league)
-        : cached
+        ? enriched.filter(f => f.league === league)
+        : enriched
       return NextResponse.json({ fixtures: filtered, source: 'cache' })
     }
 

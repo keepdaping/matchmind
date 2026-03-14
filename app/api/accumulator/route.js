@@ -6,20 +6,31 @@ export const dynamic = 'force-dynamic'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
+async function getUserFromRequest(req) {
+  const authHeader = req.headers.get('authorization') || ''
+  const token = authHeader.split(' ')[1] || ''
+  if (!token) return null
+
+  const db = getServiceClient()
+  const { data, error } = await db.auth.getUser(token)
+  if (error || !data?.user) return null
+  return data.user
+}
+
 export async function POST(req) {
   try {
-    const { userId } = await req.json()
-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const user = await getUserFromRequest(req)
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const db = getServiceClient()
 
-    const { data: user } = await db
+    const { data: profile } = await db
       .from('users')
       .select('plan, token_balance')
-      .eq('id', userId)
+      .eq('id', user.id)
       .single()
 
-    if (!user || user.plan !== 'elite') {
+    if (!profile || profile.plan !== 'elite') {
       return NextResponse.json({ error: 'Elite plan required', code: 'NOT_ELITE' }, { status: 403 })
     }
 

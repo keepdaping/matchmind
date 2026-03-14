@@ -136,14 +136,14 @@ export default function LandingPage() {
             </h1>
             <p className="text-xl text-gray-400 max-w-2xl mx-auto mb-10">
               AI-powered football predictions for Premier League, AFCON, Uganda Premier League and more.
-              Know what the bookmakers don't want you to know.
+              Know what the bookmakers don’t want you to know.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link href="/signup" className="bg-brand-500 hover:bg-brand-700 text-white font-bold px-8 py-4 rounded-xl text-lg transition-all glow">
                 Get 3 Free Predictions →
               </Link>
               <Link href="#predictions" className="text-gray-400 hover:text-white font-medium px-6 py-4 transition-colors">
-                See today's picks ↓
+                See today’s picks ↓
               </Link>
             </div>
           </div>
@@ -169,7 +169,7 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
             <div>
-              <h2 className="text-2xl font-bold">Today's Predictions</h2>
+              <h2 className="text-2xl font-bold">Today’s Predictions</h2>
               <p className="text-gray-400 text-sm mt-1">AI-generated. Updated every morning at 7am.</p>
             </div>
             <div className="flex gap-2 flex-wrap">
@@ -200,8 +200,8 @@ export default function LandingPage() {
             {[
               { step: '01', title: 'Data collected', desc: 'Team form, H2H stats, injuries, lineups, weather, home advantage — all pulled automatically.' },
               { step: '02', title: 'AI analyses', desc: 'Claude AI processes thousands of data points and identifies the most likely match outcome.' },
-              { step: '03', title: 'Prediction dropped', desc: 'Every morning at 7am, fresh prediction cards appear for the day\'s matches.' },
-              { step: '04', title: 'Result tracked', desc: 'After the match, your accuracy score updates. See MatchMind\'s weekly record.' },
+              { step: '03', title: 'Prediction dropped', desc: 'Every morning at 7am, fresh prediction cards appear for the day’s matches.' },
+              { step: '04', title: 'Result tracked', desc: 'After the match, your accuracy score updates. See MatchMind’s weekly record.' },
             ].map((s, i) => (
               <div key={i} className="glass rounded-2xl p-5 text-left">
                 <div className="text-brand-500 font-bold text-sm mb-3">{s.step}</div>
@@ -218,7 +218,7 @@ export default function LandingPage() {
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold mb-4">Simple pricing</h2>
-            <p className="text-gray-400">Start free. Upgrade when you're winning.</p>
+            <p className="text-gray-400">Start free. Upgrade when you’re winning.</p>
           </div>
           <div className="grid md:grid-cols-3 gap-6">
             {[
@@ -276,11 +276,11 @@ export default function LandingPage() {
           <div className="grid md:grid-cols-3 gap-5">
             {[
               { quote: "MatchMind called the KCCA vs Vipers result perfectly. Even got the scoreline direction right.", name: "Brian K.", location: "Kampala, Uganda" },
-              { quote: "I was skeptical but the AI actually explains why it picks what it picks. That's what I needed.", name: "Amara T.", location: "Nairobi, Kenya" },
+              { quote: "I was skeptical but the AI actually explains why it picks what it picks. That’s what I needed.", name: "Amara T.", location: "Nairobi, Kenya" },
               { quote: "Used to pay for WhatsApp tips that were 50/50. MatchMind is way more reliable.", name: "Emeka O.", location: "Lagos, Nigeria" },
             ].map((t, i) => (
               <div key={i} className="glass rounded-2xl p-5 text-left">
-                <div className="text-brand-500 text-2xl mb-3">"</div>
+                <div className="text-brand-500 text-2xl mb-3">“</div>
                 <p className="text-sm text-gray-300 mb-4 leading-relaxed">{t.quote}</p>
                 <div className="text-xs text-gray-500">{t.name} · {t.location}</div>
               </div>

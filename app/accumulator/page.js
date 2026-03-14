@@ -21,15 +21,21 @@ export default function AccumulatorPage() {
       setProfile(data)
     }
     init()
-  }, [])
+  }, [router])
 
   async function generateAccumulator() {
     setLoading(true)
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      if (!token) throw new Error('Session expired, please sign in again.')
+
       const res = await fetch('/api/accumulator', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id })
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
@@ -136,9 +142,9 @@ Powered by MatchMind Elite — matchmind.app`
               {loading ? (
                 <span className="flex items-center gap-3">
                   <span className="animate-spin">⚽</span>
-                  AI scanning today's matches...
+                  AI scanning today’s matches...
                 </span>
-              ) : 'Build Today\'s Accumulator →'}
+              ) : 'Build Today’s Accumulator →'}
             </button>
             <p className="text-xs text-gray-500 mt-3">Takes about 10 seconds</p>
           </div>
@@ -149,7 +155,7 @@ Powered by MatchMind Elite — matchmind.app`
           <div>
             {/* Header card */}
             <div className="glass rounded-2xl p-6 mb-5 glow text-center">
-              <div className="text-xs text-brand-500 font-bold uppercase tracking-wider mb-2">Today's Elite Slip</div>
+              <div className="text-xs text-brand-500 font-bold uppercase tracking-wider mb-2">Today’s Elite Slip</div>
               <h2 className="text-2xl font-bold mb-4">{accumulator.title}</h2>
               <div className="grid grid-cols-3 gap-4 mb-4">
                 <div>

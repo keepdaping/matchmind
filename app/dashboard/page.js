@@ -6,15 +6,14 @@ import Link from 'next/link'
 
 const LEAGUES = ['All', 'Premier League', 'Uganda Premier League', 'Kenya Premier League', 'Champions League', 'La Liga', 'Serie A', 'NPFL Nigeria']
 
-function PredictionCard({ fixture, userId, userPlan, onUnlock }) {
+function PredictionCard({ fixture, userId, userPlan, tokenBalance, onUnlock }) {
   const [prediction, setPrediction] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [unlocked, setUnlocked] = useState(false)
 
   const isFreeUser = userPlan === 'free'
-  /*const isLocked = isFreeUser && !unlocked*/
-  const isLocked = false
+  const isLocked = isFreeUser && (tokenBalance ?? 0) <= 0
   const confColor = prediction?.confidence >= 80 ? '#1D9E75' :
     prediction?.confidence >= 65 ? '#EF9F27' : '#E24B4A'
 
@@ -35,9 +34,16 @@ function PredictionCard({ fixture, userId, userPlan, onUnlock }) {
     }
 
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      if (!token) throw new Error('Session expired, please sign in again.')
+
       const res = await fetch('/api/predict', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           matchId: fixture.id,
           matchData: {
@@ -46,7 +52,6 @@ function PredictionCard({ fixture, userId, userPlan, onUnlock }) {
             league: fixture.league,
             date: fixture.date,
           },
-          userId,
         })
       })
 
@@ -70,7 +75,7 @@ function PredictionCard({ fixture, userId, userPlan, onUnlock }) {
       onUnlock?.()
     } catch (e) {
       console.error('Prediction unlock error:', e)
-      setError('Something went wrong. Try again.')
+      setError(e.message || 'Something went wrong. Try again.')
     } finally {
       setLoading(false)
     }
@@ -199,6 +204,7 @@ export default function Dashboard() {
   const [streak, setStreak] = useState(0)
   const [pageError, setPageError] = useState(null)
 
+  /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     async function init() {
       try {
@@ -249,6 +255,7 @@ export default function Dashboard() {
 
     init()
   }, [])
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   useEffect(() => {
     async function fetchFixtures() {
@@ -309,7 +316,7 @@ export default function Dashboard() {
         {/* Welcome */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold mb-1">
-            Today's Predictions
+            Today’s Predictions
           </h1>
           <p className="text-gray-400 text-sm">
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} · {fixtures.length} matches found
@@ -327,7 +334,7 @@ export default function Dashboard() {
         {profile?.plan === 'free' && (
           <div className="bg-brand-500/10 border border-brand-500/20 rounded-2xl p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
             <div>
-              <div className="font-semibold text-sm mb-0.5">You're on the free plan</div>
+              <div className="font-semibold text-sm mb-0.5">You’re on the free plan</div>
               <div className="text-xs text-gray-400">Unlock all predictions, 10+ leagues, and the accumulator builder.</div>
             </div>
             <Link href="/billing?upgrade=pro" className="bg-brand-500 hover:bg-brand-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors whitespace-nowrap">
@@ -369,6 +376,7 @@ export default function Dashboard() {
                 fixture={fixture}
                 userId={user?.id}
                 userPlan={profile?.plan || 'free'}
+                tokenBalance={profile?.token_balance}
                 onUnlock={() => setProfile(p => ({
                   ...p,
                   token_balance: Math.max(0, (p?.token_balance || 0) - 1)
