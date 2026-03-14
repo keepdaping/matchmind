@@ -2,6 +2,31 @@ import { NextResponse } from 'next/server'
 import { generatePrediction } from '@/lib/claude'
 import { getServiceClient } from '@/lib/supabase'
 
+function normalizeRisk(value) {
+  if (typeof value !== 'string') return 'Medium'
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'low') return 'Low'
+  if (normalized === 'medium') return 'Medium'
+  if (normalized === 'high') return 'High'
+  return 'Medium'
+}
+
+function parseInteger(value, fallback = 0) {
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.round(value)
+  if (typeof value === 'string') {
+    const num = parseInt(value.replace(/[^0-9-]/g, ''), 10)
+    if (!Number.isNaN(num)) return num
+  }
+  return fallback
+}
+
+function normalizeDate(value) {
+  if (!value) return null
+  const d = new Date(value)
+  if (!Number.isFinite(d.getTime())) return null
+  return d.toISOString()
+}
+
 export async function POST(req) {
   try {
     const { matchId, matchData, userId } = await req.json()
@@ -35,7 +60,7 @@ export async function POST(req) {
     const { data: existing } = await db
       .from('predictions')
       .select('*')
-      .eq('match_id', matchId)
+      .eq('match_id', String(matchId))
       .single()
 
     if (existing) {
@@ -46,30 +71,38 @@ export async function POST(req) {
     // Generate prediction via Claude
     const prediction = await generatePrediction(matchData)
 
+    // Sanitize and validate values before inserting
+    const cleaned = {
+      match_id: String(matchId),
+      home_team: String(matchData.home_team || ''),
+      away_team: String(matchData.away_team || ''),
+      league: String(matchData.league || ''),
+      match_date: normalizeDate(matchData.date) || new Date().toISOString(),
+      outcome: String(prediction.outcome || ''),
+      confidence: parseInteger(prediction.confidence, 0),
+      risk: normalizeRisk(prediction.risk),
+      summary: String(prediction.summary || ''),
+      reasons: Array.isArray(prediction.reasons)
+        ? prediction.reasons.map(r => String(r))
+        : [],
+      key_stat: String(prediction.key_stat || ''),
+      watch_out: String(prediction.watch_out || ''),
+      btts_confidence: parseInteger(prediction.btts_confidence, 0),
+      over25_confidence: parseInteger(prediction.over25_confidence, 0),
+    }
+
     // Save prediction to database
     const { data: saved, error: saveError } = await db
       .from('predictions')
-      .insert({
-        match_id: matchId,
-        home_team: matchData.home_team,
-        away_team: matchData.away_team,
-        league: matchData.league,
-        match_date: matchData.date,
-        outcome: prediction.outcome,
-        confidence: prediction.confidence,
-        risk: prediction.risk,
-        summary: prediction.summary,
-        reasons: prediction.reasons,
-        key_stat: prediction.key_stat,
-        watch_out: prediction.watch_out,
-        btts_confidence: prediction.btts_confidence,
-        over25_confidence: prediction.over25_confidence,
-      })
+      .insert(cleaned)
       .select()
       .single()
 
     if (saveError) {
-      console.error('Save error:', saveError)
+      console.error('Prediction insert error:', {
+        error: saveError,
+        payload: cleaned,
+      })
       return NextResponse.json({ error: 'Failed to save prediction' }, { status: 500 })
     }
 
