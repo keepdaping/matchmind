@@ -88,7 +88,7 @@ create table public.predictions (
 
   id uuid primary key default gen_random_uuid(),
 
-  user_id uuid references public.users(id) on delete cascade,
+  user_id uuid not null references public.users(id) on delete cascade,
   match_id text not null,    -- TEXT avoids bigint errors
 
   home_team text not null,
@@ -276,6 +276,32 @@ for select
 using (auth.uid() = user_id);
 
 
+
+-- ============================================================
+-- TOKEN UTILITIES
+-- ============================================================
+
+create or replace function public.decrement_user_tokens(_user uuid, _amount integer)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  new_balance integer;
+begin
+  update public.users
+  set token_balance = token_balance - _amount
+  where id = _user and token_balance >= _amount
+  returning token_balance into new_balance;
+
+  if new_balance is null then
+    raise exception 'Insufficient tokens';
+  end if;
+
+  return new_balance;
+end;
+$$;
 
 -- ============================================================
 -- INDEXES (Performance)

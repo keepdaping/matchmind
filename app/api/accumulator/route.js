@@ -36,10 +36,11 @@ export async function POST(req) {
 
     const today = new Date().toISOString().split('T')[0]
 
-    // Get today's cached predictions
+    // Get today's cached predictions for this user only
     const { data: predictions } = await db
       .from('predictions')
       .select('*')
+      .eq('user_id', user.id)
       .gte('created_at', today)
       .order('confidence', { ascending: false })
 

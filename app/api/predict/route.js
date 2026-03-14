@@ -117,6 +117,20 @@ export async function POST(req) {
       .single()
 
     if (saveError) {
+      // Handle race condition where another request inserted the same prediction
+      const isUniqueViolation = saveError?.code === '23505' || String(saveError?.message || '').includes('duplicate key value')
+      if (isUniqueViolation) {
+        const { data: existingAfterRace } = await db
+          .from('predictions')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('match_id', String(matchId))
+          .single()
+        if (existingAfterRace) {
+          return NextResponse.json({ prediction: existingAfterRace, cached: true })
+        }
+      }
+
       console.error('Prediction insert error:', {
         error: saveError,
         payload: cleaned,
@@ -124,10 +138,19 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Failed to save prediction' }, { status: 500 })
     }
 
-    // Deduct 1 token
-    await db.from('users').update({
-      token_balance: profile.token_balance - 1
-    }).eq('id', user.id)
+    // Deduct 1 token (atomic)
+    const { data: newBalance, error: deductError } = await db.rpc('decrement_user_tokens', {
+      _user: user.id,
+      _amount: 1,
+    })
+
+    if (deductError) {
+      console.warn('Token deduction failed', { error: deductError })
+      return NextResponse.json({
+        error: 'Unable to deduct token. Please try again.',
+        code: 'TOKEN_DEDUCTION_FAILED'
+      }, { status: 500 })
+    }
 
     // Log token transaction
     await db.from('token_transactions').insert({
