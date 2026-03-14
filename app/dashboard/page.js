@@ -58,6 +58,7 @@ function PredictionCard({ fixture, userId, userPlan, tokenBalance, onUnlock }) {
       const data = await res.json().catch(() => ({}))
 
       if (!res.ok) {
+        console.error('[Predict] API returned error', { status: res.status, data })
         if (data?.code === 'NO_TOKENS') {
           setError('no_tokens')
         } else {

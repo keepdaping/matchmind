@@ -130,6 +130,12 @@ export async function POST(req) {
           error: isInsufficient ? 'No predictions remaining' : 'Unable to deduct token. Please try again.',
           code: isInsufficient ? 'NO_TOKENS' : 'TOKEN_DEDUCTION_FAILED',
           details: deductError?.message,
+          deductError: {
+            message: deductError?.message,
+            code: deductError?.code,
+            details: deductError?.details,
+            hint: deductError?.hint,
+          },
         },
         { status: isInsufficient ? 402 : 500 }
       )
