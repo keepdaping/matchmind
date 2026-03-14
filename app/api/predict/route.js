@@ -69,7 +69,7 @@ export async function POST(req) {
     }
 
     // Generate prediction via Claude
-    const prediction = await generatePrediction(matchData)
+    const prediction = await generatePrediction(matchData, user.plan)
 
     // Sanitize and validate values before inserting
     const cleaned = {
