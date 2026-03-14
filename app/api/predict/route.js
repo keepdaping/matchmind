@@ -109,6 +109,32 @@ export async function POST(req) {
       over25_confidence: parseInteger(prediction.over25_confidence, 0),
     }
 
+    // Deduct 1 token (atomic) — this prevents token race conditions.
+    // If deduction fails, we do not want to create a prediction for free.
+    const { data: newBalance, error: deductError } = await db.rpc('decrement_user_tokens', {
+      _user: user.id,
+      _amount: 1,
+    })
+
+    if (deductError) {
+      const isInsufficient = String(deductError?.message || '').toLowerCase().includes('insufficient')
+      console.error('[Predict] Token deduction failed', {
+        userId: user.id,
+        matchId,
+        error: deductError,
+        isInsufficient,
+      })
+
+      return NextResponse.json(
+        {
+          error: isInsufficient ? 'No predictions remaining' : 'Unable to deduct token. Please try again.',
+          code: isInsufficient ? 'NO_TOKENS' : 'TOKEN_DEDUCTION_FAILED',
+          details: deductError?.message,
+        },
+        { status: isInsufficient ? 402 : 500 }
+      )
+    }
+
     // Save prediction to database
     const { data: saved, error: saveError } = await db
       .from('predictions')
@@ -117,6 +143,28 @@ export async function POST(req) {
       .single()
 
     if (saveError) {
+      // Anything that fails here should refund the token.
+      console.error('[Predict] Prediction insert failed (after token deduction)', {
+        userId: user.id,
+        matchId,
+        cleaned,
+        dbError: saveError,
+      })
+
+      // Attempt to refund the token.
+      try {
+        await db.rpc('decrement_user_tokens', {
+          _user: user.id,
+          _amount: -1,
+        })
+      } catch (refundError) {
+        console.error('[Predict] Failed to refund token after insert failure', {
+          userId: user.id,
+          matchId,
+          refundError,
+        })
+      }
+
       // Handle race condition where another request inserted the same prediction.
       // If we hit a unique constraint, the prediction may already exist.
       const isUniqueViolation =
@@ -165,14 +213,6 @@ export async function POST(req) {
         }
       }
 
-      // Log full error payload for debugging
-      console.error('[Predict] Prediction insert failed', {
-        userId: user.id,
-        matchId,
-        cleaned,
-        dbError: saveError,
-      })
-
       const safeMessage = saveError?.message || 'Failed to save prediction'
       return NextResponse.json(
         {
@@ -183,24 +223,6 @@ export async function POST(req) {
         },
         { status: 500 }
       )
-    }
-
-    // Deduct 1 token (atomic) — this prevents token race conditions
-    const { data: newBalance, error: deductError } = await db.rpc('decrement_user_tokens', {
-      _user: user.id,
-      _amount: 1,
-    })
-
-    if (deductError) {
-      console.error('[Predict] Token deduction failed', {
-        userId: user.id,
-        matchId,
-        error: deductError,
-      })
-      return NextResponse.json({
-        error: 'Unable to deduct token. Please try again.',
-        code: 'TOKEN_DEDUCTION_FAILED'
-      }, { status: 500 })
     }
 
     // Log token transaction
