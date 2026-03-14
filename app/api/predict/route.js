@@ -117,7 +117,8 @@ export async function POST(req) {
       .single()
 
     if (saveError) {
-      // Handle race condition where another request inserted the same prediction
+      // Handle race condition where another request inserted the same prediction.
+      // If we hit a unique constraint, the prediction may already exist.
       const isUniqueViolation =
         saveError?.code === '23505' ||
         String(saveError?.message || '').toLowerCase().includes('duplicate key')
@@ -140,6 +141,27 @@ export async function POST(req) {
 
         if (existingAfterRace) {
           return NextResponse.json({ prediction: existingAfterRace, cached: true })
+        }
+
+        // If we get here, the unique constraint violation happened but the row isn't for this user.
+        // That indicates the database has a unique constraint on match_id (global) rather than (user_id, match_id).
+        if (String(saveError?.message || '').includes('predictions_match_id_key')) {
+          console.error('[Predict] Unexpected global unique constraint on predictions.match_id', {
+            userId: user.id,
+            matchId,
+            dbError: saveError,
+            note: 'The DB should instead enforce uniqueness on (user_id, match_id).',
+          })
+
+          return NextResponse.json(
+            {
+              error: 'Database schema mismatch: predictions must be unique per user.',
+              code: 'INVALID_PREDICTIONS_CONSTRAINT',
+              details:
+                'There is a global unique constraint on predictions.match_id; it should be on (user_id, match_id).',
+            },
+            { status: 500 }
+          )
         }
       }
 
