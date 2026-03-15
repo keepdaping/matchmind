@@ -52,22 +52,35 @@ export async function POST(req) {
         .slice(0, 3)
         .map(p => ({
           match: p.home_team + ' vs ' + p.away_team,
-          league: p.league, outcome: p.outcome,
-          confidence: p.confidence, risk: p.risk
+          league: p.league,
+          outcome: p.outcome,
+          confidence: p.confidence,
+          risk: p.risk
         }))
     }
 
     if (candidates.length < 3) {
       candidates = fixtures.slice(0, 3).map(f => ({
         match: f.home_team + ' vs ' + f.away_team,
-        league: f.league, outcome: 'To be determined',
-        confidence: null, risk: 'Medium'
+        league: f.league,
+        outcome: 'To be determined',
+        confidence: null,
+        risk: 'Medium'
       }))
     }
 
-    if (candidates.length < 3) return NextResponse.json({ error: 'Not enough strong matches today' }, { status: 400 })
+    if (candidates.length < 3) {
+      return NextResponse.json({ error: 'Not enough strong matches today' }, { status: 400 })
+    }
 
     const explanation = await generateAccumulatorExplanation({ selections: candidates })
+
+    const oddsMap = c => c.confidence >= 80 ? 1.85 : c.confidence >= 65 ? 2.10 : 2.50
+    const combinedOdds = candidates.reduce((acc, c) => acc * oddsMap(c), 1).toFixed(2)
+    const withConf = candidates.filter(c => c.confidence)
+    const avgConfidence = withConf.length
+      ? Math.round(withConf.reduce((sum, c) => sum + c.confidence, 0) / withConf.length)
+      : 70
 
     return NextResponse.json({
       accumulator: {
@@ -75,19 +88,22 @@ export async function POST(req) {
         selections: candidates.map(c => ({
           match: c.match,
           league: c.league,
-          tip: c.outcome,
+          pick: c.outcome || 'To be determined',
+          estimated_odds: oddsMap(c).toFixed(2),
           confidence: c.confidence || 70,
+          reasoning: explanation.reasoning
+            ? `${c.risk} risk selection. ${explanation.reasoning.slice(0, 80)}...`
+            : `${c.risk} risk selection based on current form and match data.`,
           risk: c.risk
         })),
-        estimated_combined_odds: (candidates.length * 1.8).toFixed(2),
-        overall_confidence: candidates.filter(c => c.confidence)
-          .reduce((sum, c) => sum + c.confidence, 0) / (candidates.filter(c => c.confidence).length || 1) | 0,
-        potential_return_example: `$10 stake → $${(10 * candidates.length * 1.8).toFixed(2)} return`,
+        estimated_combined_odds: combinedOdds,
+        overall_confidence: avgConfidence,
+        potential_return_example: `$10 stake → $${(10 * parseFloat(combinedOdds)).toFixed(2)} return`,
         banker: candidates[0]?.match || '',
         risk_warning: explanation.risk_level === 'High'
           ? '⚠️ High risk accumulator — stake responsibly'
           : 'Always gamble responsibly. Never bet more than you can afford.',
-        elite_note: explanation.reasoning,
+        elite_note: explanation.reasoning || 'AI-selected picks based on today\'s match data.',
         avoid_market: null,
         summary: explanation.summary,
         risk_level: explanation.risk_level
@@ -99,4 +115,3 @@ export async function POST(req) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
-
