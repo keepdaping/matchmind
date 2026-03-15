@@ -6,36 +6,47 @@ import { getServiceClient } from '@/lib/supabase'
 export async function POST(req) {
   try {
     const db = getServiceClient()
-    // 1. Fetch finished matches from API-Football (pseudo-code, replace with real fetch)
-    const finishedMatches = [] // TODO: fetch from API-Football
 
-    // 2. Update fixtures_cache and predictions
+    // TODO: Replace with real API-Football fetch
+    // Example: fetch finished matches for today
+    // const finishedMatches = await getFinishedMatches()
+    const finishedMatches = []
+
+    if (finishedMatches.length === 0) {
+      return NextResponse.json({ updated: 0, message: 'No finished matches to update' })
+    }
+
+    let updated = 0
+
     for (const match of finishedMatches) {
-      // Update fixtures_cache
-      await db.from('fixtures_cache')
-        .update({
-          actual_home_goals: match.home_goals,
-          actual_away_goals: match.away_goals
-        })
-        .eq('match_id', match.match_id)
-
-      // Update predictions
       const actualOutcome =
         match.home_goals > match.away_goals ? 'Home Win' :
         match.home_goals < match.away_goals ? 'Away Win' : 'Draw'
 
-      await db.from('predictions')
-        .update({
-          actual_home_goals: match.home_goals,
-          actual_away_goals: match.away_goals,
-          actual_outcome: actualOutcome,
-          prediction_correct: db.raw('outcome = ?', [actualOutcome])
-        })
-        .eq('match_id', match.match_id)
+      // Fetch all predictions for this match
+      const { data: predictions } = await db
+        .from('predictions')
+        .select('id, outcome')
+        .eq('match_id', String(match.match_id))
+
+      for (const pred of predictions || []) {
+        await db.from('predictions')
+          .update({
+            actual_home_goals:  match.home_goals,
+            actual_away_goals:  match.away_goals,
+            actual_outcome:     actualOutcome,
+            prediction_correct: pred.outcome === actualOutcome,
+          })
+          .eq('id', pred.id)
+      }
+
+      updated++
     }
 
-    return NextResponse.json({ updated: finishedMatches.length })
+    return NextResponse.json({ updated })
+
   } catch (err) {
+    console.error('[Results] Update error:', err)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
