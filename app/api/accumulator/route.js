@@ -49,7 +49,7 @@ export async function POST(req) {
       candidates = cachedPredictions
         .filter(p => p.confidence >= 65 && p.risk !== 'High')
         .sort((a, b) => b.confidence - a.confidence)
-        .slice(0, 5)
+        .slice(0, 3)
         .map(p => ({
           match: p.home_team + ' vs ' + p.away_team,
           league: p.league, outcome: p.outcome,
@@ -58,7 +58,7 @@ export async function POST(req) {
     }
 
     if (candidates.length < 3) {
-      candidates = fixtures.slice(0, 5).map(f => ({
+      candidates = fixtures.slice(0, 3).map(f => ({
         match: f.home_team + ' vs ' + f.away_team,
         league: f.league, outcome: 'To be determined',
         confidence: null, risk: 'Medium'
@@ -99,3 +99,4 @@ export async function POST(req) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }
+
