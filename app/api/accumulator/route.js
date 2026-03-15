@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase'
-import Anthropic from '@anthropic-ai/sdk'
+
+import { buildMatchFeatures } from '@/lib/features'
+import { computeMatchProbabilities } from '@/lib/model'
+import { generatePredictionFromStats } from '@/lib/prediction'
+import { generateAccumulatorExplanation } from '@/lib/claude'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,6 +26,7 @@ export async function POST(req) {
     const user = await getUserFromRequest(req)
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+
     const db = getServiceClient()
 
     const { data: profile } = await db
@@ -34,86 +39,55 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Elite plan required', code: 'NOT_ELITE' }, { status: 403 })
     }
 
-    const today = new Date().toISOString().split('T')[0]
-
-    // Get today's cached predictions for this user only
-    const { data: predictions } = await db
-      .from('predictions')
+    // Fetch today's matches (example: from fixtures_cache or external API)
+    // For this refactor, assume we have a function to get today's matches with stats and odds
+    const todayMatches = await db
+      .from('fixtures_cache')
       .select('*')
-      .eq('user_id', user.id)
-      .gte('created_at', today)
-      .order('confidence', { ascending: false })
+      .gte('date', new Date().toISOString().split('T')[0])
+      .limit(30)
 
-    const matchList = predictions && predictions.length > 0
-      ? predictions.map(p =>
-          `- ${p.home_team} vs ${p.away_team} (${p.league}): Predicted ${p.outcome}, Confidence ${p.confidence}%, Risk ${p.risk}`
-        ).join('\n')
-      : `Build accumulator from today's top football matches across Premier League, CAF Champions League, Bundesliga, Serie A, La Liga`
-
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1500,
-      system: `You are MatchMind's Elite Accumulator Engine. You build high-value 3-fold accumulator bet slips for serious football bettors in Uganda and East Africa.
-
-You must ONLY respond with a valid JSON object. No markdown. Pure JSON only.
-
-Return this exact structure:
-{
-  "title": "<catchy name e.g. 'Saturday Banker Triple', 'Weekend Certainty', 'African Derby Special'>",
-  "overall_confidence": <integer 60-82>,
-  "estimated_combined_odds": "<realistic combined odds e.g. 6.50>",
-  "potential_return_example": "<e.g. 'UGX 10,000 stake returns UGX 65,000'>",
-  "selections": [
-    {
-      "match": "<Home Team vs Away Team>",
-      "league": "<league>",
-      "pick": "<market: Home Win | Away Win | Draw | BTTS Yes | Over 2.5 Goals | Under 2.5 Goals | Draw No Bet>",
-      "confidence": <integer 65-88>,
-      "reasoning": "<2 specific sentences — why this pick is strong>",
-      "estimated_odds": "<e.g. 1.85>"
-    },
-    {
-      "match": "<Home Team vs Away Team>",
-      "league": "<league>",
-      "pick": "<market>",
-      "confidence": <integer 65-88>,
-      "reasoning": "<2 specific sentences>",
-      "estimated_odds": "<e.g. 2.20>"
-    },
-    {
-      "match": "<Home Team vs Away Team>",
-      "league": "<league>",
-      "pick": "<market>",
-      "confidence": <integer 65-88>,
-      "reasoning": "<2 specific sentences>",
-      "estimated_odds": "<e.g. 1.75>"
+    // Build predictions for each match
+    const accumulatorCandidates = []
+    for (const match of todayMatches.data || []) {
+      // Assume match.stats and match.odds are available (otherwise, fetch them)
+      const features = buildMatchFeatures(match.stats)
+      const probabilities = computeMatchProbabilities(features)
+      const prediction = generatePredictionFromStats(probabilities, match.odds)
+      // Only include strong predictions
+      if (prediction.probability >= 0.65 && prediction.risk !== 'High') {
+        accumulatorCandidates.push({
+          match: `${match.home_team} vs ${match.away_team}`,
+          league: match.league,
+          outcome: prediction.outcome,
+          probability: prediction.probability,
+          confidence: prediction.confidence,
+          risk: prediction.risk
+        })
+      }
     }
-  ],
-  "banker": "<which selection is the safest banker and why>",
-  "avoid_market": "<one market to avoid today and why>",
-  "risk_warning": "Accumulators carry higher risk. Only stake what you can afford to lose.",
-  "elite_note": "<one insider observation that gives this slip extra conviction>"
-}
 
-Rules:
-- Only selections with confidence above 65%
-- Prefer: Home Win for strong home sides, BTTS for attacking teams, Over 2.5 for high-scoring leagues
-- Combined odds must be realistic: 5.00 to 12.00 range
-- Use UGX for return examples (Uganda primary market)
-- Be specific — reference real match context in reasoning
-- Never pick 3 high-risk selections — always include at least one banker`,
+    // Sort by probability descending, select top 3–5
+    accumulatorCandidates.sort((a, b) => b.probability - a.probability)
+    const selected = accumulatorCandidates.slice(0, 5)
+    if (selected.length < 3) {
+      return NextResponse.json({ error: 'Not enough strong matches for accumulator' }, { status: 400 })
+    }
+    const accumulatorMatches = selected.slice(0, Math.min(5, selected.length))
 
-      messages: [{
-        role: 'user',
-        content: `Build today's Elite 3-fold accumulator.\n\nAvailable predictions:\n${matchList}\n\nDate: ${today}`
-      }]
+    // Calculate combined probability (product of individual probabilities)
+    const combinedProbability = accumulatorMatches.reduce((acc, m) => acc * m.probability, 1)
+
+    // Ask Claude for accumulator explanation
+    const explanation = await generateAccumulatorExplanation({ selections: accumulatorMatches })
+
+    return NextResponse.json({
+      matches: accumulatorMatches,
+      combinedProbability: Number(combinedProbability.toFixed(4)),
+      summary: explanation.summary,
+      reasoning: explanation.reasoning,
+      risk_level: explanation.risk_level
     })
-
-    const text = response.content[0].text.trim()
-    const clean = text.replace(/```json|```/g, '').trim()
-    const accumulator = JSON.parse(clean)
-
-    return NextResponse.json({ accumulator })
 
   } catch (err) {
     console.error('[Accumulator] Error:', err)
