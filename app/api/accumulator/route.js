@@ -8,7 +8,7 @@ import { generateAccumulatorExplanation } from '@/lib/claude'
 export const dynamic = 'force-dynamic'
 
 // ← nothing else here, straight into getUserFromRequest
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+//const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 async function getUserFromRequest(req) {
   const authHeader = req.headers.get('authorization') || ''
