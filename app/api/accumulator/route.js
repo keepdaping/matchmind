@@ -70,12 +70,28 @@ export async function POST(req) {
     const explanation = await generateAccumulatorExplanation({ selections: candidates })
 
     return NextResponse.json({
-      matches: candidates,
-      combinedProbability: candidates.filter(c => c.confidence)
-        .reduce((acc, m) => acc * (m.confidence / 100), 1).toFixed(4),
-      summary: explanation.summary,
-      reasoning: explanation.reasoning,
-      risk_level: explanation.risk_level
+      accumulator: {
+        title: `Today's AI Accumulator — ${new Date().toDateString()}`,
+        selections: candidates.map(c => ({
+          match: c.match,
+          league: c.league,
+          tip: c.outcome,
+          confidence: c.confidence || 70,
+          risk: c.risk
+        })),
+        estimated_combined_odds: (candidates.length * 1.8).toFixed(2),
+        overall_confidence: candidates.filter(c => c.confidence)
+          .reduce((sum, c) => sum + c.confidence, 0) / (candidates.filter(c => c.confidence).length || 1) | 0,
+        potential_return_example: `$10 stake → $${(10 * candidates.length * 1.8).toFixed(2)} return`,
+        banker: candidates[0]?.match || '',
+        risk_warning: explanation.risk_level === 'High'
+          ? '⚠️ High risk accumulator — stake responsibly'
+          : 'Always gamble responsibly. Never bet more than you can afford.',
+        elite_note: explanation.reasoning,
+        avoid_market: null,
+        summary: explanation.summary,
+        risk_level: explanation.risk_level
+      }
     })
 
   } catch (err) {
