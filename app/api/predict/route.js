@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server'
-import { generatePrediction } from '@/lib/claude'
+import { generatePredictionExplanation } from '@/lib/claude'
+import { buildMatchFeatures } from '@/lib/features'
+import { computeMatchProbabilities } from '@/lib/model'
+import { generatePredictionFromStats } from '@/lib/prediction'
 import { getServiceClient } from '@/lib/supabase'
 
 function normalizeRisk(value) {
@@ -45,7 +48,7 @@ export async function POST(req) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { matchId, matchData } = await req.json()
+    const { matchId, matchData, odds } = await req.json()
 
     if (!matchId || !matchData) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -88,8 +91,15 @@ export async function POST(req) {
       return NextResponse.json({ prediction: existing, cached: true })
     }
 
-    // Generate prediction via Claude
-    const prediction = await generatePrediction(matchData, profile.plan)
+    // --- New Statistical Prediction Pipeline ---
+    // 1. Build features from match stats
+    const features = buildMatchFeatures(matchData)
+    // 2. Compute probabilities
+    const probabilities = computeMatchProbabilities(features)
+    // 3. Generate prediction (with value detection)
+    const prediction = generatePredictionFromStats(probabilities, odds)
+    // 4. Ask Claude for explanation only
+    const explanation = await generatePredictionExplanation({ prediction, features, probabilities })
 
     // Sanitize and validate values before inserting
     const cleaned = {
@@ -101,15 +111,16 @@ export async function POST(req) {
       match_date: normalizeDate(matchData.date) || new Date().toISOString(),
       outcome: String(prediction.outcome || ''),
       confidence: parseInteger(prediction.confidence, 0),
+      probability: prediction.probability,
       risk: normalizeRisk(prediction.risk),
-      summary: String(prediction.summary || ''),
-      reasons: Array.isArray(prediction.reasons)
-        ? prediction.reasons.map(r => String(r))
+      market_probability: prediction.marketProbability,
+      value: prediction.value,
+      summary: String(explanation.summary || ''),
+      reasons: Array.isArray(explanation.reasons)
+        ? explanation.reasons.map(r => String(r))
         : [],
-      key_stat: String(prediction.key_stat || ''),
-      watch_out: String(prediction.watch_out || ''),
-      btts_confidence: parseInteger(prediction.btts_confidence, 0),
-      over25_confidence: parseInteger(prediction.over25_confidence, 0),
+      key_stat: String(explanation.key_stat || ''),
+      watch_out: String(explanation.watch_out || ''),
     }
 
     // Deduct 1 token (atomic) — this prevents token race conditions.
@@ -248,7 +259,20 @@ export async function POST(req) {
       })
     }
 
-    return NextResponse.json({ prediction: saved, cached: false })
+    // Return new response format
+    return NextResponse.json({
+      outcome: cleaned.outcome,
+      confidence: cleaned.confidence,
+      probability: cleaned.probability,
+      risk: cleaned.risk,
+      marketProbability: cleaned.market_probability,
+      value: cleaned.value,
+      summary: cleaned.summary,
+      reasons: cleaned.reasons,
+      key_stat: cleaned.key_stat,
+      watch_out: cleaned.watch_out,
+      cached: false
+    })
 
   } catch (err) {
     console.error('Prediction API error:', err)
