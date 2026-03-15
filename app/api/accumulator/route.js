@@ -176,19 +176,36 @@ export async function POST(req) {
       }
     }
 
-    // ── Step 4: Pick top 3 by confidence, risk not High ──
+
+    // ── Step 4: Improved accumulator selection logic ──
     const allPredictions = Object.values(predictedMap)
 
+    // 1. Only include predictions with confidence ≥ 65 and risk !== 'High'
+    // 2. Exclude volatile markets: Draw, Under 2.5 Goals
+    // 3. Prefer stable markets: Home Win, Away Win, Over 2.5 Goals, BTTS
+    const stableMarkets = ['Home Win', 'Away Win', 'Over 2.5 Goals', 'BTTS']
     let candidates = allPredictions
-      .filter(p => p.confidence >= 65 && p.risk !== 'High')
+      .filter(p =>
+        p.confidence >= 65 &&
+        p.risk !== 'High' &&
+        stableMarkets.includes(p.outcome)
+      )
       .sort((a, b) => b.confidence - a.confidence)
-      .slice(0, 3)
+      .slice(0, 5)
 
-    // Relax filter if not enough
+    // 4. If fewer than 3 matches remain, allow fallback including draws/Under 2.5 but only if confidence ≥ 75
     if (candidates.length < 3) {
       candidates = allPredictions
+        .filter(p =>
+          p.confidence >= 75 &&
+          p.risk !== 'High' &&
+          (p.outcome === 'Draw' || p.outcome === 'Under 2.5 Goals')
+        )
+        .concat(candidates)
         .sort((a, b) => b.confidence - a.confidence)
         .slice(0, 3)
+    } else {
+      candidates = candidates.slice(0, 3)
     }
 
     if (candidates.length < 3) {
