@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { generatePredictionExplanation } from '@/lib/claude'
+import { generatePredictionExplanation, generatePrediction } from '@/lib/claude'
 import { buildMatchFeatures } from '@/lib/features'
 import { computeMatchProbabilities } from '@/lib/model'
 import { generatePredictionFromStats } from '@/lib/prediction'
@@ -83,17 +83,17 @@ export async function POST(req) {
       .eq('match_id', String(matchId))
       .single()
 
-    const homeTeamId  = fixture?.home_team_id
-    const awayTeamId  = fixture?.away_team_id
-    const leagueId    = fixture?.league_id
+    const homeTeamId = fixture?.home_team_id
+    const awayTeamId = fixture?.away_team_id
+    const leagueId   = fixture?.league_id
 
     // ── Fetch real stats if team IDs available ────────────
     let recentMatchesHome = []
     let recentMatchesAway = []
-    let headToHead = []
-    let homeFormStr = 'No data'
-    let awayFormStr = 'No data'
-    let h2hStr = 'No H2H data'
+    let headToHead        = []
+    let homeFormStr       = 'No data'
+    let awayFormStr       = 'No data'
+    let h2hStr            = 'No H2H data'
 
     if (homeTeamId && awayTeamId && leagueId) {
       console.log(`[Predict] Fetching stats for ${matchData.home_team} vs ${matchData.away_team}`)
@@ -107,35 +107,76 @@ export async function POST(req) {
           getH2H(homeTeamId, awayTeamId),
         ])
     } else {
-      console.warn(`[Predict] No team IDs for match ${matchId} — using defaults`)
+      console.warn(`[Predict] No team IDs for match ${matchId} — will use Claude`)
     }
 
-    // ── Build features → probabilities → prediction ───────
-    const features = buildMatchFeatures({
-      recentMatchesHome,
-      recentMatchesAway,
-      headToHead,
-      leagueAvgGoals: 2.6,
-    })
+    // ── Hybrid: Poisson model if real stats, Claude if not ─
+    const hasRealStats = recentMatchesHome.length >= 3 && recentMatchesAway.length >= 3
 
-    const probabilities = computeMatchProbabilities(features)
-    const prediction    = generatePredictionFromStats(probabilities, odds || null)
+    let outcome, confidence, probability, risk, marketProbability, value,
+        summary, reasons, key_stat, watch_out, btts_confidence, over25_confidence
 
-    // ── Claude explains the statistical result ────────────
-    const explanation = await generatePredictionExplanation({
-      prediction,
-      features: {
-        ...features,
-        home_team: matchData.home_team,
-        away_team: matchData.away_team,
-        league: matchData.league,
+    if (hasRealStats) {
+      // ── DATA-DRIVEN: Poisson model → Claude explains ────
+      console.log(`[Predict] Using Poisson model for ${matchData.home_team} vs ${matchData.away_team}`)
+
+      const features      = buildMatchFeatures({ recentMatchesHome, recentMatchesAway, headToHead, leagueAvgGoals: 2.6 })
+      const probabilities = computeMatchProbabilities(features)
+      const prediction    = generatePredictionFromStats(probabilities, odds || null)
+      const explanation   = await generatePredictionExplanation({
+        prediction,
+        features: {
+          ...features,
+          home_team: matchData.home_team,
+          away_team: matchData.away_team,
+          league: matchData.league,
+          home_form: homeFormStr,
+          away_form: awayFormStr,
+          h2h: h2hStr,
+          venue: fixture?.venue || 'Home ground',
+        },
+        probabilities,
+      })
+
+      outcome            = prediction.outcome
+      confidence         = prediction.confidence
+      probability        = prediction.probability
+      risk               = prediction.risk
+      marketProbability  = prediction.marketProbability ?? null
+      value              = prediction.value ?? null
+      summary            = explanation.summary || ''
+      reasons            = explanation.reasons || []
+      key_stat           = explanation.key_stat || ''
+      watch_out          = explanation.watch_out || ''
+      btts_confidence    = Math.round((probabilities.btts || 0) * 100)
+      over25_confidence  = Math.round((probabilities.over25 || 0) * 100)
+
+    } else {
+      // ── FALLBACK: Claude generates full prediction ──────
+      console.log(`[Predict] No real stats — using Claude for ${matchData.home_team} vs ${matchData.away_team}`)
+
+      const plan   = isElite ? 'elite' : isPro ? 'pro' : 'free'
+      const result = await generatePrediction({
+        ...matchData,
         home_form: homeFormStr,
         away_form: awayFormStr,
         h2h: h2hStr,
         venue: fixture?.venue || 'Home ground',
-      },
-      probabilities,
-    })
+      }, plan)
+
+      outcome           = result.outcome
+      confidence        = result.confidence
+      probability       = result.confidence ? result.confidence / 100 : null
+      risk              = result.risk
+      marketProbability = null
+      value             = null
+      summary           = result.summary || ''
+      reasons           = result.reasons || []
+      key_stat          = result.key_stat || ''
+      watch_out         = result.watch_out || ''
+      btts_confidence   = result.btts_confidence ?? null
+      over25_confidence = result.over25_confidence ?? null
+    }
 
     // ── Sanitize for DB ───────────────────────────────────
     const cleaned = {
@@ -145,18 +186,18 @@ export async function POST(req) {
       away_team:          String(matchData.away_team || ''),
       league:             String(matchData.league || ''),
       match_date:         normalizeDate(matchData.date) || new Date().toISOString(),
-      outcome:            String(prediction.outcome || ''),
-      confidence:         Number.isFinite(prediction.confidence) ? Math.round(prediction.confidence) : 0,
-      probability:        prediction.probability ?? null,
-      risk:               normalizeRisk(prediction.risk),
-      market_probability: prediction.marketProbability ?? null,
-      value:              prediction.value ?? null,
-      summary:            String(explanation.summary || ''),
-      reasons:            Array.isArray(explanation.reasons) ? explanation.reasons.map(r => String(r)) : [],
-      key_stat:           String(explanation.key_stat || ''),
-      watch_out:          String(explanation.watch_out || ''),
-      btts_confidence:    Math.round((probabilities.btts || 0) * 100),
-      over25_confidence:  Math.round((probabilities.over25 || 0) * 100),
+      outcome:            String(outcome || ''),
+      confidence:         Number.isFinite(confidence) ? Math.round(confidence) : 0,
+      probability:        probability ?? null,
+      risk:               normalizeRisk(risk),
+      market_probability: marketProbability ?? null,
+      value:              value ?? null,
+      summary:            String(summary || ''),
+      reasons:            Array.isArray(reasons) ? reasons.map(r => String(r)) : [],
+      key_stat:           String(key_stat || ''),
+      watch_out:          String(watch_out || ''),
+      btts_confidence:    btts_confidence ?? null,
+      over25_confidence:  over25_confidence ?? null,
       tier:               isElite ? 'elite' : isPro ? 'pro' : 'free',
     }
 
@@ -184,12 +225,10 @@ export async function POST(req) {
     if (saveError) {
       console.error('[Predict] Insert failed', saveError)
 
-      // Refund token on failure
       if (!isElite && !isPro) {
         await db.rpc('decrement_user_tokens', { _user: user.id, _amount: -1 }).catch(() => {})
       }
 
-      // Race condition — another request saved same prediction
       const isUniqueViolation = saveError?.code === '23505' ||
         String(saveError?.message || '').toLowerCase().includes('duplicate key')
 
@@ -208,7 +247,6 @@ export async function POST(req) {
       return NextResponse.json({ error: saveError?.message || 'Failed to save prediction' }, { status: 500 })
     }
 
-    // ── Log token transaction ─────────────────────────────
     if (!isElite && !isPro) {
       await db.from('token_transactions').insert({
         user_id: user.id,
