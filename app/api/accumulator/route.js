@@ -19,6 +19,13 @@ async function getUserFromRequest(req) {
   return data.user
 }
 
+// Derive fair odds from model probability
+function toOdds(p) {
+  const prob = p.probability || (p.confidence / 100)
+  if (!prob || prob <= 0) return 2.00
+  return Math.max(1.01, Number((1 / prob).toFixed(2)))
+}
+
 async function predictFixture(fixture, plan) {
   let recentHome = [], recentAway = [], h2h = []
   let homeFormStr = 'No data', awayFormStr = 'No data', h2hStr = 'No H2H data'
@@ -34,7 +41,10 @@ async function predictFixture(fixture, plan) {
     ])
   }
 
-  const hasRealStats = recentHome.length >= 3 && recentAway.length >= 3
+  const hasRealStats = recentHome.length >= 3
+    && recentAway.length >= 3
+    && recentHome.some(m => m.goalsFor > 0 || m.goalsAgainst > 0)
+    && recentAway.some(m => m.goalsFor > 0 || m.goalsAgainst > 0)
 
   if (hasRealStats) {
     const features      = buildMatchFeatures({ recentMatchesHome: recentHome, recentMatchesAway: recentAway, headToHead: h2h, leagueAvgGoals: 2.6 })
@@ -59,13 +69,13 @@ async function predictFixture(fixture, plan) {
     }
   } else {
     const result = await generatePrediction({
-      home_team: fixture.home_team,
-      away_team: fixture.away_team,
-      league: fixture.league,
-      date: fixture.match_time || fixture.date,
-      home_form: homeFormStr,
-      away_form: awayFormStr,
-      h2h: h2hStr,
+      home_team:  fixture.home_team,
+      away_team:  fixture.away_team,
+      league:     fixture.league,
+      date:       fixture.match_time || fixture.date,
+      home_form:  homeFormStr,
+      away_form:  awayFormStr,
+      h2h:        h2hStr,
     }, plan)
     return {
       outcome:           result.outcome,
@@ -196,9 +206,8 @@ export async function POST(req) {
 
     const explanation = await generateAccumulatorExplanation({ selections })
 
-    // ── Step 6: Build response ────────────────────────────
-    const oddsMap      = (conf) => conf >= 80 ? 1.85 : conf >= 65 ? 2.10 : 2.50
-    const combinedOdds = candidates.reduce((acc, p) => acc * oddsMap(p.confidence), 1)
+    // ── Step 6: Build response with probability-derived odds ─
+    const combinedOdds = candidates.reduce((acc, p) => acc * toOdds(p), 1)
     const avgConf      = Math.round(candidates.reduce((sum, p) => sum + p.confidence, 0) / candidates.length)
 
     return NextResponse.json({
@@ -208,7 +217,7 @@ export async function POST(req) {
           match:          `${p.home_team} vs ${p.away_team}`,
           league:         p.league,
           pick:           p.outcome,
-          estimated_odds: oddsMap(p.confidence).toFixed(2),
+          estimated_odds: toOdds(p).toFixed(2),
           confidence:     p.confidence,
           reasoning:      p.summary || `${p.risk} risk — model confidence ${p.confidence}%.`,
           risk:           p.risk,
