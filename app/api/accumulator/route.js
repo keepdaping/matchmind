@@ -180,7 +180,8 @@ export async function POST(req) {
     // ── Step 4: Improved accumulator selection logic ──
     const allPredictions = Object.values(predictedMap)
 
-    // 1. Only include predictions with confidence ≥ 65 and risk !== 'High'
+
+    // 1. Only include predictions with confidence ≥ 65, risk !== 'High', value > 0, and stable markets
     // 2. Exclude volatile markets: Draw, Under 2.5 Goals
     // 3. Prefer stable markets: Home Win, Away Win, Over 2.5 Goals, BTTS
     const stableMarkets = ['Home Win', 'Away Win', 'Over 2.5 Goals', 'BTTS']
@@ -188,37 +189,56 @@ export async function POST(req) {
       .filter(p =>
         p.confidence >= 65 &&
         p.risk !== 'High' &&
-        stableMarkets.includes(p.outcome)
+        stableMarkets.includes(p.outcome) &&
+        typeof p.value === 'number' && p.value > 0
       )
-      .sort((a, b) => b.confidence - a.confidence)
+      .sort((a, b) => b.value - a.value)
       .slice(0, 5)
 
-    // 4. If fewer than 3 matches remain, allow fallback including draws/Under 2.5 but only if confidence ≥ 75
+    // 4. If fewer than 3 matches remain, allow fallback including draws/Under 2.5 but only if confidence ≥ 75 and value > 0
     if (candidates.length < 3) {
-      candidates = allPredictions
+      const fallback = allPredictions
         .filter(p =>
           p.confidence >= 75 &&
           p.risk !== 'High' &&
-          (p.outcome === 'Draw' || p.outcome === 'Under 2.5 Goals')
+          (p.outcome === 'Draw' || p.outcome === 'Under 2.5 Goals') &&
+          typeof p.value === 'number' && p.value > 0
         )
-        .concat(candidates)
-        .sort((a, b) => b.confidence - a.confidence)
-        .slice(0, 3)
-    } else {
-      candidates = candidates.slice(0, 3)
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 3 - candidates.length)
+      candidates = candidates.concat(fallback)
     }
+
+    // Final fallback: if still < 3, use highest confidence stable markets (even if value <= 0)
+    if (candidates.length < 3) {
+      const backup = allPredictions
+        .filter(p =>
+          p.confidence >= 65 &&
+          p.risk !== 'High' &&
+          stableMarkets.includes(p.outcome)
+        )
+        .sort((a, b) => b.confidence - a.confidence)
+        .slice(0, 3 - candidates.length)
+      candidates = candidates.concat(backup)
+    }
+
+    candidates = candidates.slice(0, 3)
 
     if (candidates.length < 3) {
       return NextResponse.json({ error: 'Not enough predictions available for an accumulator today' }, { status: 400 })
     }
 
     // ── Step 5: Claude explains the slip ─────────────────
+
     const selections = candidates.map(p => ({
       match:      `${p.home_team} vs ${p.away_team}`,
       league:     p.league,
       outcome:    p.outcome,
       confidence: p.confidence,
       risk:       p.risk,
+      value:      typeof p.value === 'number' ? Number(p.value.toFixed(3)) : null,
+      market_odds: p.market_odds || null,
+      market_probability: p.marketProbability || null,
     }))
 
     const explanation = await generateAccumulatorExplanation({ selections })
@@ -226,6 +246,7 @@ export async function POST(req) {
     // ── Step 6: Build response with probability-derived odds ─
     const combinedOdds = candidates.reduce((acc, p) => acc * toOdds(p), 1)
     const avgConf      = Math.round(candidates.reduce((sum, p) => sum + p.confidence, 0) / candidates.length)
+
 
     return NextResponse.json({
       accumulator: {
@@ -238,6 +259,9 @@ export async function POST(req) {
           confidence:     p.confidence,
           reasoning:      p.summary || `${p.risk} risk — model confidence ${p.confidence}%.`,
           risk:           p.risk,
+          value:          typeof p.value === 'number' ? Number(p.value.toFixed(3)) : null,
+          market_odds:    p.market_odds || null,
+          market_probability: p.marketProbability || null,
         })),
         estimated_combined_odds: combinedOdds.toFixed(2),
         overall_confidence:      avgConf,
