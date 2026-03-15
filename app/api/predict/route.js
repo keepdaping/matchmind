@@ -42,7 +42,6 @@ export async function POST(req) {
 
     const db = getServiceClient()
 
-    // Get user profile
     const { data: profile, error: profileError } = await db
       .from('users')
       .select('token_balance, plan')
@@ -110,8 +109,13 @@ export async function POST(req) {
       console.warn(`[Predict] No team IDs for match ${matchId} — will use Claude`)
     }
 
-    // ── Hybrid: Poisson model if real stats, Claude if not ─
-    const hasRealStats = recentMatchesHome.length >= 3 && recentMatchesAway.length >= 3
+    // ── Hybrid decision: Poisson model OR Claude ──────────
+    // Use Poisson only when we have enough real goal data.
+    // If teams scored/conceded 0 in all matches, the model breaks.
+    const hasRealStats = recentMatchesHome.length >= 3
+      && recentMatchesAway.length >= 3
+      && recentMatchesHome.some(m => m.goalsFor > 0 || m.goalsAgainst > 0)
+      && recentMatchesAway.some(m => m.goalsFor > 0 || m.goalsAgainst > 0)
 
     let outcome, confidence, probability, risk, marketProbability, value,
         summary, reasons, key_stat, watch_out, btts_confidence, over25_confidence
@@ -127,29 +131,29 @@ export async function POST(req) {
         prediction,
         features: {
           ...features,
-          home_team: matchData.home_team,
-          away_team: matchData.away_team,
-          league: matchData.league,
-          home_form: homeFormStr,
-          away_form: awayFormStr,
-          h2h: h2hStr,
-          venue: fixture?.venue || 'Home ground',
+          home_team:  matchData.home_team,
+          away_team:  matchData.away_team,
+          league:     matchData.league,
+          home_form:  homeFormStr,
+          away_form:  awayFormStr,
+          h2h:        h2hStr,
+          venue:      fixture?.venue || 'Home ground',
         },
         probabilities,
       })
 
-      outcome            = prediction.outcome
-      confidence         = prediction.confidence
-      probability        = prediction.probability
-      risk               = prediction.risk
-      marketProbability  = prediction.marketProbability ?? null
-      value              = prediction.value ?? null
-      summary            = explanation.summary || ''
-      reasons            = explanation.reasons || []
-      key_stat           = explanation.key_stat || ''
-      watch_out          = explanation.watch_out || ''
-      btts_confidence    = Math.round((probabilities.btts || 0) * 100)
-      over25_confidence  = Math.round((probabilities.over25 || 0) * 100)
+      outcome           = prediction.outcome
+      confidence        = prediction.confidence
+      probability       = prediction.probability
+      risk              = prediction.risk
+      marketProbability = prediction.marketProbability ?? null
+      value             = prediction.value ?? null
+      summary           = explanation.summary || ''
+      reasons           = explanation.reasons || []
+      key_stat          = explanation.key_stat || ''
+      watch_out         = explanation.watch_out || ''
+      btts_confidence   = Math.round((probabilities.btts || 0) * 100)
+      over25_confidence = Math.round((probabilities.over25 || 0) * 100)
 
     } else {
       // ── FALLBACK: Claude generates full prediction ──────
@@ -160,8 +164,8 @@ export async function POST(req) {
         ...matchData,
         home_form: homeFormStr,
         away_form: awayFormStr,
-        h2h: h2hStr,
-        venue: fixture?.venue || 'Home ground',
+        h2h:       h2hStr,
+        venue:     fixture?.venue || 'Home ground',
       }, plan)
 
       outcome           = result.outcome
@@ -249,9 +253,9 @@ export async function POST(req) {
 
     if (!isElite && !isPro) {
       await db.from('token_transactions').insert({
-        user_id: user.id,
-        amount: -1,
-        type: 'prediction_unlock',
+        user_id:   user.id,
+        amount:    -1,
+        type:      'prediction_unlock',
         reference: `match_${matchId}`,
       })
     }
