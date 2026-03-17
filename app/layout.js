@@ -2,11 +2,11 @@ import './globals.css'
 
 export const metadata = {
   title: 'MatchMind — AI Football Predictions',
-  description: 'AI-powered match predictions. Your edge before kickoff. Every single day.',
-  keywords: 'football predictions, AI sports betting, match tips Uganda, Kenya football tips',
+  description: 'Dixon-Coles Poisson model predictions for 28+ football leagues. Your edge before kickoff.',
+  keywords: 'football predictions, AI sports predictions, match tips, Uganda Premier League, Premier League tips, betting predictions, Dixon-Coles model',
   openGraph: {
     title: 'MatchMind — AI Football Predictions',
-    description: 'Your edge before kickoff. Every single day.',
+    description: 'Dixon-Coles Poisson model. 28 leagues. Your edge before kickoff.',
     type: 'website',
   },
 }
@@ -14,7 +14,7 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-[#0a0f0d] text-[#e8f0ec] antialiased">
+      <body className="min-h-screen antialiased">
         {children}
       </body>
     </html>
