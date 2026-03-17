@@ -127,6 +127,83 @@ function BillingContent() {
     }
   }
 
+  const [apiKeys, setApiKeys] = useState([])
+  const [apiKeyLoading, setApiKeyLoading] = useState(false)
+  const [newKeyName, setNewKeyName] = useState('')
+  const [newKeyResult, setNewKeyResult] = useState(null)
+  const [copiedKey, setCopiedKey] = useState(false)
+
+  const isElite = profile?.plan === 'elite'
+
+  // Fetch API keys when profile loads
+  useEffect(() => {
+    async function fetchKeys() {
+      if (!isElite) return
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const token = session?.access_token
+        if (!token) return
+        const res = await fetch('/api/v1/keys', {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const data = await res.json()
+        if (data.keys) setApiKeys(data.keys)
+      } catch {}
+    }
+    if (profile) fetchKeys()
+  }, [profile, isElite])
+
+  async function handleCreateKey() {
+    setApiKeyLoading(true)
+    setNewKeyResult(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      if (!token) throw new Error('Session expired')
+      const res = await fetch('/api/v1/keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: newKeyName || 'My Key' }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setNewKeyResult(data.key)
+      setNewKeyName('')
+      // Refresh key list
+      const listRes = await fetch('/api/v1/keys', { headers: { Authorization: `Bearer ${token}` } })
+      const listData = await listRes.json()
+      if (listData.keys) setApiKeys(listData.keys)
+    } catch (e) {
+      alert(e.message)
+    } finally {
+      setApiKeyLoading(false)
+    }
+  }
+
+  async function handleRevokeKey(keyId) {
+    if (!confirm('Revoke this API key? Any apps using it will stop working.')) return
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      if (!token) throw new Error('Session expired')
+      const res = await fetch('/api/v1/keys', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ key_id: keyId }),
+      })
+      if (!res.ok) throw new Error('Failed to revoke')
+      setApiKeys(prev => prev.filter(k => k.id !== keyId))
+    } catch (e) {
+      alert(e.message)
+    }
+  }
+
+  function copyKey(key) {
+    navigator.clipboard.writeText(key)
+    setCopiedKey(true)
+    setTimeout(() => setCopiedKey(false), 3000)
+  }
+
   const tokenDisplay = profile?.token_balance >= 999990 ? '∞' : profile?.token_balance ?? 0
 
   return (
@@ -224,6 +301,95 @@ function BillingContent() {
             </div>
           ))}
         </div>
+
+        {/* Elite API Keys */}
+        {isElite && (
+          <div className="mt-10">
+            <h2 className="text-lg font-semibold mb-2">API Access</h2>
+            <p className="text-sm text-gray-400 mb-4">Use your API key to access MatchMind predictions programmatically. Max 3 keys, 100 requests/hour.</p>
+
+            {/* Create new key */}
+            <div className="glass rounded-2xl p-5 mb-4">
+              <div className="flex gap-3 items-end flex-wrap">
+                <div className="flex-1 min-w-[200px]">
+                  <label className="block text-xs text-gray-400 mb-1.5">Key name</label>
+                  <input
+                    type="text"
+                    value={newKeyName}
+                    onChange={e => setNewKeyName(e.target.value)}
+                    placeholder="e.g. My Telegram Bot"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-brand-500 transition-colors"
+                  />
+                </div>
+                <button onClick={handleCreateKey} disabled={apiKeyLoading}
+                  className="bg-brand-500 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors whitespace-nowrap">
+                  {apiKeyLoading ? 'Creating...' : 'Generate API Key'}
+                </button>
+              </div>
+
+              {/* Newly created key (show once) */}
+              {newKeyResult && (
+                <div className="mt-4 bg-brand-500/10 border border-brand-500/20 rounded-xl p-4">
+                  <div className="text-xs text-brand-500 font-bold mb-2">Save this key now — you won't see it again!</div>
+                  <div className="flex items-center gap-2">
+                    <code className="text-sm text-brand-200 bg-black/30 px-3 py-1.5 rounded-lg flex-1 overflow-x-auto">
+                      {newKeyResult.key}
+                    </code>
+                    <button onClick={() => copyKey(newKeyResult.key)}
+                      className="text-xs bg-brand-500 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
+                      {copiedKey ? '✓ Copied' : 'Copy'}
+                    </button>
+                  </div>
+                  <div className="mt-3 text-xs text-gray-400">
+                    <span className="text-gray-300 font-medium">Quick test:</span>{' '}
+                    <code className="text-gray-500">curl -H &quot;X-API-Key: {newKeyResult.key}&quot; https://matchmind.app/api/v1/matches</code>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Existing keys */}
+            {apiKeys.length > 0 && (
+              <div className="space-y-3">
+                {apiKeys.map(k => (
+                  <div key={k.id} className="glass rounded-xl p-4 flex items-center justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium">{k.name}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        <code>{k.key_preview}</code> · {k.requests_today || 0} requests today ·{' '}
+                        {k.is_active
+                          ? <span className="text-brand-500">Active</span>
+                          : <span className="text-red-400">Revoked</span>
+                        }
+                      </div>
+                    </div>
+                    {k.is_active && (
+                      <button onClick={() => handleRevokeKey(k.id)}
+                        className="text-xs text-red-400 hover:text-red-300 border border-red-500/20 hover:border-red-500/40 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
+                        Revoke
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* API docs summary */}
+            <div className="glass rounded-xl p-5 mt-4">
+              <div className="text-sm font-semibold mb-3">Endpoints</div>
+              <div className="space-y-2 text-xs text-gray-400">
+                <div><code className="text-brand-200">GET /api/v1/matches</code> — Today's fixtures</div>
+                <div><code className="text-brand-200">GET /api/v1/predictions</code> — Your predictions</div>
+                <div><code className="text-brand-200">GET /api/v1/predictions?match_id=X</code> — Predict a specific match</div>
+                <div><code className="text-brand-200">GET /api/v1/accumulator</code> — Daily AI accumulator</div>
+                <div><code className="text-brand-200">GET /api/v1/keys</code> — Manage API keys</div>
+              </div>
+              <div className="mt-3 text-xs text-gray-500">
+                Pass your key as <code>X-API-Key</code> header or <code>Authorization: Bearer &lt;key&gt;</code>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
