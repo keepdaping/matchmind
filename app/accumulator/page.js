@@ -11,6 +11,7 @@ export default function AccumulatorPage() {
   const [accumulator, setAccumulator] = useState(null)
   const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     async function init() {
@@ -25,6 +26,7 @@ export default function AccumulatorPage() {
 
   async function generateAccumulator() {
     setLoading(true)
+    setError(null)
     try {
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token
@@ -37,11 +39,13 @@ export default function AccumulatorPage() {
           Authorization: `Bearer ${token}`,
         },
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || `Server error (${res.status})`)
+      if (!data.accumulator) throw new Error('No accumulator data returned')
       setAccumulator(data.accumulator)
     } catch (e) {
-      alert(e.message)
+      console.error('[Accumulator] Error:', e)
+      setError(e.message || 'Something went wrong. Try again.')
     } finally {
       setLoading(false)
     }
@@ -142,11 +146,21 @@ Powered by MatchMind Elite — matchmind.app`
               {loading ? (
                 <span className="flex items-center gap-3">
                   <span className="animate-spin">⚽</span>
-                  AI scanning today’s matches...
+                  AI scanning matches...
                 </span>
-              ) : 'Build Today’s Accumulator →'}
+              ) : 'Build Accumulator →'}
             </button>
             <p className="text-xs text-gray-500 mt-3">Takes about 10 seconds</p>
+
+            {error && (
+              <div className="mt-4 max-w-md mx-auto bg-red-900/30 border border-red-500/30 rounded-xl px-5 py-4 text-sm text-red-300">
+                <div className="font-semibold mb-1">Something went wrong</div>
+                <div className="text-xs text-red-400">{error}</div>
+                <button onClick={() => setError(null)} className="mt-2 text-xs text-red-500 hover:text-red-300 underline">
+                  Dismiss
+                </button>
+              </div>
+            )}
           </div>
         )}
 
