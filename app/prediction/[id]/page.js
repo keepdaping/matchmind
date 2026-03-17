@@ -156,6 +156,26 @@ export default function PredictionPage({ params }) {
           </div>
         </div>
 
+        {/* Predicted scoreline + expected goals */}
+        {(prediction.top_scoreline || prediction.expected_home_goals != null) && (
+          <div className="grid grid-cols-2 gap-4 mb-5">
+            {prediction.top_scoreline && (
+              <div className="glass rounded-2xl p-4 text-center">
+                <div className="text-xs text-gray-400 mb-1">Predicted Score</div>
+                <div className="text-2xl font-bold text-brand-500">{prediction.top_scoreline}</div>
+              </div>
+            )}
+            {prediction.expected_home_goals != null && prediction.expected_away_goals != null && (
+              <div className="glass rounded-2xl p-4 text-center">
+                <div className="text-xs text-gray-400 mb-1">Expected Goals</div>
+                <div className="text-2xl font-bold text-brand-500">
+                  {prediction.expected_home_goals} – {prediction.expected_away_goals}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Key stat */}
         {prediction.key_stat && (
           <div className="bg-brand-500/10 border border-brand-500/20 rounded-2xl p-4 mb-5">

@@ -70,8 +70,8 @@ Powered by MatchMind Elite — matchmind.app`
 
   const confColor = (c) => c >= 80 ? '#1D9E75' : c >= 65 ? '#EF9F27' : '#E24B4A'
 
-  // Not elite — show upgrade wall
-  if (profile && profile.plan !== 'elite') {
+  // Not Pro/Elite — show upgrade wall
+  if (profile && !['pro', 'elite'].includes(profile.plan)) {
     return (
       <div className="min-h-screen">
         <nav className="sticky top-0 z-40 glass border-b border-white/5">

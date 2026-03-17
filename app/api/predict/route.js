@@ -42,6 +42,7 @@ export async function POST(req) {
 
     const db = getServiceClient()
 
+    // Get user profile
     const { data: profile, error: profileError } = await db
       .from('users')
       .select('token_balance, plan')
@@ -82,17 +83,17 @@ export async function POST(req) {
       .eq('match_id', String(matchId))
       .single()
 
-    const homeTeamId = fixture?.home_team_id
-    const awayTeamId = fixture?.away_team_id
-    const leagueId   = fixture?.league_id
+    const homeTeamId  = fixture?.home_team_id
+    const awayTeamId  = fixture?.away_team_id
+    const leagueId    = fixture?.league_id
 
     // ── Fetch real stats if team IDs available ────────────
     let recentMatchesHome = []
     let recentMatchesAway = []
-    let headToHead        = []
-    let homeFormStr       = 'No data'
-    let awayFormStr       = 'No data'
-    let h2hStr            = 'No H2H data'
+    let headToHead = []
+    let homeFormStr = 'No data'
+    let awayFormStr = 'No data'
+    let h2hStr = 'No H2H data'
 
     if (homeTeamId && awayTeamId && leagueId) {
       console.log(`[Predict] Fetching stats for ${matchData.home_team} vs ${matchData.away_team}`)
@@ -106,32 +107,32 @@ export async function POST(req) {
           getH2H(homeTeamId, awayTeamId),
         ])
     } else {
-      console.warn(`[Predict] No team IDs for match ${matchId} — using league averages`)
+      console.warn(`[Predict] No team IDs for match ${matchId} — using defaults`)
     }
 
-    // ── Always use the statistical pipeline ──────────────
-    // If no real stats, features.js uses empty arrays and
-    // falls back to league average attack/defense values (0.4 floor).
-    // Claude NEVER decides the outcome — it only explains.
-    const features      = buildMatchFeatures({
+    // ── Build features → probabilities → prediction ───────
+    const features = buildMatchFeatures({
       recentMatchesHome,
       recentMatchesAway,
       headToHead,
       leagueAvgGoals: 2.6,
     })
+
     const probabilities = computeMatchProbabilities(features)
     const prediction    = generatePredictionFromStats(probabilities, odds || null)
-    const explanation   = await generatePredictionExplanation({
+
+    // ── Claude explains the statistical result ────────────
+    const explanation = await generatePredictionExplanation({
       prediction,
       features: {
         ...features,
         home_team: matchData.home_team,
         away_team: matchData.away_team,
-        league:    matchData.league,
+        league: matchData.league,
         home_form: homeFormStr,
         away_form: awayFormStr,
-        h2h:       h2hStr,
-        venue:     fixture?.venue || 'Home ground',
+        h2h: h2hStr,
+        venue: fixture?.venue || 'Home ground',
       },
       probabilities,
     })
@@ -183,10 +184,12 @@ export async function POST(req) {
     if (saveError) {
       console.error('[Predict] Insert failed', saveError)
 
+      // Refund token on failure
       if (!isElite && !isPro) {
         await db.rpc('decrement_user_tokens', { _user: user.id, _amount: -1 }).catch(() => {})
       }
 
+      // Race condition — another request saved same prediction
       const isUniqueViolation = saveError?.code === '23505' ||
         String(saveError?.message || '').toLowerCase().includes('duplicate key')
 
@@ -205,11 +208,12 @@ export async function POST(req) {
       return NextResponse.json({ error: saveError?.message || 'Failed to save prediction' }, { status: 500 })
     }
 
+    // ── Log token transaction ─────────────────────────────
     if (!isElite && !isPro) {
       await db.from('token_transactions').insert({
-        user_id:   user.id,
-        amount:    -1,
-        type:      'prediction_unlock',
+        user_id: user.id,
+        amount: -1,
+        type: 'prediction_unlock',
         reference: `match_${matchId}`,
       })
     }

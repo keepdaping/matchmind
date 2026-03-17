@@ -149,7 +149,16 @@ function PredictionCard({ fixture, userId, userPlan, tokenBalance, onUnlock }) {
               </span>
               <span className="text-xs text-gray-500">BTTS {prediction.btts_confidence}%</span>
               <span className="text-xs text-gray-500">O2.5 {prediction.over25_confidence}%</span>
+              {prediction.top_scoreline && (
+                <span className="text-xs text-brand-500 font-medium">Score: {prediction.top_scoreline}</span>
+              )}
             </div>
+
+            {prediction.expected_home_goals != null && prediction.expected_away_goals != null && (
+              <div className="mt-2 flex items-center gap-3 text-xs text-gray-500">
+                <span>xG: {prediction.expected_home_goals} - {prediction.expected_away_goals}</span>
+              </div>
+            )}
 
             {prediction.watch_out && (
               <div className="mt-3 bg-amber-900/20 border border-amber-500/20 rounded-lg px-3 py-2">
