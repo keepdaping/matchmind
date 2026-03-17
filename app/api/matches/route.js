@@ -36,20 +36,17 @@ export async function GET(req) {
       console.log('[Matches] No FOOTBALL_API_KEY — using demo fixtures')
       const demoFixtures = getDemoFixtures('All')
 
+      // ── Cache demo fixtures so accumulator can find them ─
       const rows = demoFixtures.map(f => ({
         match_id: String(f.id),
         date: today,
         league: f.league,
         home_team: f.home_team,
         away_team: f.away_team,
-        home_team_id: f.home_team_id || null,
-        away_team_id: f.away_team_id || null,
-        league_id: f.league_id || null,
         match_time: f.date,
         venue: null,
         status: 'NS',
       }))
-
       const { error: upsertErr } = await db
         .from('fixtures_cache')
         .upsert(rows, { onConflict: 'match_id' })
@@ -70,7 +67,7 @@ export async function GET(req) {
     console.log('[Matches] Fetching live fixtures from API-Football...')
     const fixtures = await getTodayFixtures()
 
-    // ── 4. Cache in Supabase (with team IDs) ──────────────
+    // ── 4. Cache in Supabase ───────────────────────────────
     if (fixtures.length > 0) {
       const rows = fixtures.map(f => ({
         match_id: String(f.id),
@@ -78,9 +75,6 @@ export async function GET(req) {
         league: f.league,
         home_team: f.home_team,
         away_team: f.away_team,
-        home_team_id: f.home_team_id || null,
-        away_team_id: f.away_team_id || null,
-        league_id: f.league_id || null,
         match_time: f.date,
         venue: f.venue || null,
         status: f.status || 'NS',
@@ -100,15 +94,13 @@ export async function GET(req) {
     if (filtered.length === 0) {
       console.log('[Matches] API returned 0 fixtures — falling back to demo')
       const demoFixtures = getDemoFixtures('All')
+
       const rows = demoFixtures.map(f => ({
         match_id: String(f.id),
         date: today,
         league: f.league,
         home_team: f.home_team,
         away_team: f.away_team,
-        home_team_id: null,
-        away_team_id: null,
-        league_id: null,
         match_time: f.date,
         venue: null,
         status: 'NS',
@@ -142,16 +134,16 @@ function getDemoFixtures(league = 'All') {
   }
 
   const all = [
-    { id: 9001, league: 'Premier League',        league_id: 39,  home_team: 'Arsenal',     home_team_id: 42,  away_team: 'Chelsea',         away_team_id: 49,  date: t(15), status: 'NS' },
-    { id: 9002, league: 'Premier League',        league_id: 39,  home_team: 'Liverpool',   home_team_id: 40,  away_team: 'Man City',         away_team_id: 50,  date: t(17), status: 'NS' },
-    { id: 9003, league: 'Uganda Premier League', league_id: 671, home_team: 'KCCA FC',     home_team_id: null, away_team: 'Vipers SC',       away_team_id: null, date: t(14), status: 'NS' },
-    { id: 9004, league: 'Uganda Premier League', league_id: 671, home_team: 'Express FC',  home_team_id: null, away_team: 'SC Villa',        away_team_id: null, date: t(16), status: 'NS' },
-    { id: 9005, league: 'Champions League',      league_id: 2,   home_team: 'Real Madrid', home_team_id: 541, away_team: 'Bayern Munich',    away_team_id: 157, date: t(20), status: 'NS' },
-    { id: 9006, league: 'Champions League',      league_id: 2,   home_team: 'Man City',    home_team_id: 50,  away_team: 'PSG',              away_team_id: 85,  date: t(20), status: 'NS' },
-    { id: 9007, league: 'La Liga',               league_id: 140, home_team: 'Barcelona',   home_team_id: 529, away_team: 'Atletico Madrid',  away_team_id: 530, date: t(21), status: 'NS' },
-    { id: 9008, league: 'Serie A',               league_id: 135, home_team: 'AC Milan',    home_team_id: 489, away_team: 'Inter Milan',      away_team_id: 505, date: t(19), status: 'NS' },
-    { id: 9009, league: 'NPFL Nigeria',          league_id: 334, home_team: 'Enyimba FC',  home_team_id: null, away_team: 'Rivers United',  away_team_id: null, date: t(15), status: 'NS' },
-    { id: 9010, league: 'Kenya Premier League',  league_id: 700, home_team: 'Gor Mahia',   home_team_id: null, away_team: 'AFC Leopards',   away_team_id: null, date: t(15), status: 'NS' },
+    { id: 9001, league: 'Premier League',        home_team: 'Arsenal',      away_team: 'Chelsea',        date: t(15), status: 'NS' },
+    { id: 9002, league: 'Premier League',        home_team: 'Liverpool',    away_team: 'Man City',       date: t(17), status: 'NS' },
+    { id: 9003, league: 'Uganda Premier League', home_team: 'KCCA FC',      away_team: 'Vipers SC',      date: t(14), status: 'NS' },
+    { id: 9004, league: 'Uganda Premier League', home_team: 'Express FC',   away_team: 'SC Villa',       date: t(16), status: 'NS' },
+    { id: 9005, league: 'Champions League',      home_team: 'Real Madrid',  away_team: 'Bayern Munich',  date: t(20), status: 'NS' },
+    { id: 9006, league: 'Champions League',      home_team: 'Man City',     away_team: 'PSG',            date: t(20), status: 'NS' },
+    { id: 9007, league: 'La Liga',               home_team: 'Barcelona',    away_team: 'Atletico Madrid',date: t(21), status: 'NS' },
+    { id: 9008, league: 'Serie A',               home_team: 'AC Milan',     away_team: 'Inter Milan',    date: t(19), status: 'NS' },
+    { id: 9009, league: 'NPFL Nigeria',          home_team: 'Enyimba FC',   away_team: 'Rivers United',  date: t(15), status: 'NS' },
+    { id: 9010, league: 'Kenya Premier League',  home_team: 'Gor Mahia',    away_team: 'AFC Leopards',   date: t(15), status: 'NS' },
   ]
 
   if (league === 'All') return all
